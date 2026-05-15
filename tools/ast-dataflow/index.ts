@@ -4,12 +4,16 @@ import { Project } from 'ts-morph';
 export { callers } from './queries/callers';
 export { importers } from './queries/importers';
 export { references } from './queries/references';
+export { columnReads } from './queries/column-reads';
 export { AstResolverError } from './resolve';
 export type {
   BaseResult,
   CallSiteResult,
   CallResolution,
   CallersArgs,
+  ColumnReadMethod,
+  ColumnReadResult,
+  ColumnReadsArgs,
   Confidence,
   ErrorKind,
   ImporterResult,

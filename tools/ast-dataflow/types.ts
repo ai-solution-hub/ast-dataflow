@@ -101,3 +101,19 @@ export interface ImporterResult extends BaseResult {
   isReexportOnly: boolean;
   unused: boolean;
 }
+
+export interface ColumnReadsArgs {
+  table: string;
+  column: string;
+  limit?: number;
+  excludeTests?: boolean;
+}
+
+export type ColumnReadMethod = 'select' | 'eq' | 'match' | 'rpc-payload';
+
+export interface ColumnReadResult extends BaseResult {
+  method: ColumnReadMethod;
+  columnPath: string;   // the matched column literal or object key
+  table: string;        // echo of the table arg
+  isTyped: boolean;     // true if the Supabase client is type-instantiated with a row type
+}

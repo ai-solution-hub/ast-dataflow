@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { callers, importers, references, createProject } from '@/lib/ast-dataflow';
+import { callers, columnReads, importers, references, createProject } from '@/lib/ast-dataflow';
 import type { ReferenceKind } from '@/lib/ast-dataflow';
 
 interface ParsedArgs {
@@ -89,9 +89,21 @@ function printCatalogue(): void {
             example:
               "bun run ast-dataflow references --symbol 'types/bid.ts:BidState'",
           },
+          {
+            name: 'column-reads',
+            args: [
+              '--table <table-name>',
+              '--column <column-name>',
+              '--exclude-tests',
+              '--limit N',
+              '--pretty',
+            ],
+            example:
+              'bun run ast-dataflow column-reads --table bid_questions --column project_id',
+          },
         ],
         notes:
-          'S3 — callers + importers + references queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S3 — callers + importers + references + column-reads queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
@@ -178,9 +190,40 @@ async function main(): Promise<void> {
       emitResponse(response, pretty);
       return;
     }
+    case 'column-reads': {
+      const table = parsed.flags.table;
+      const column = parsed.flags.column;
+      if (typeof table !== 'string' || !table) {
+        console.error('column-reads requires --table <table-name>');
+        console.error('Example: bun run ast-dataflow column-reads --table bid_questions --column project_id');
+        process.exit(2);
+      }
+      if (typeof column !== 'string' || !column) {
+        console.error('column-reads requires --column <column-name>');
+        console.error('Example: bun run ast-dataflow column-reads --table bid_questions --column project_id');
+        process.exit(2);
+      }
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const excludeTests = parsed.flags['exclude-tests'] === true;
+      const response = await columnReads(
+        {
+          table,
+          column,
+          ...(limit ? { limit } : {}),
+          ...(excludeTests ? { excludeTests } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
-      console.error('Valid queries: callers, importers, references');
+      console.error('Valid queries: callers, importers, references, column-reads');
       process.exit(2);
     }
   }
