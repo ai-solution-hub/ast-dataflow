@@ -35,3 +35,23 @@ export interface CallersArgs {
   limit?: number;
   scope?: string;
 }
+
+export interface ImportersArgs {
+  modulePath: string; // '@/lib/ai/digest' or 'lib/ai/digest.ts'
+  limit?: number;     // default 200
+}
+
+export type ImportStyle =
+  | 'named'
+  | 'default'
+  | 'namespace'
+  | 'typeOnly'
+  | 'reexport';
+
+export interface ImporterResult extends BaseResult {
+  confidence: 'exact';
+  namedImports: string[];
+  importStyle: ImportStyle;
+  isReexportOnly: boolean;
+  unused: boolean;
+}

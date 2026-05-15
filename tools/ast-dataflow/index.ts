@@ -2,12 +2,16 @@ import { resolve } from 'node:path';
 import { Project } from 'ts-morph';
 
 export { callers } from './callers';
+export { importers } from './importers';
 export type {
   BaseResult,
   CallSiteResult,
   CallResolution,
   CallersArgs,
   Confidence,
+  ImporterResult,
+  ImportersArgs,
+  ImportStyle,
   QueryResponse,
 } from './types';
 
