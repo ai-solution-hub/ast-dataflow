@@ -10,6 +10,7 @@ export type {
   CallResolution,
   CallersArgs,
   Confidence,
+  ErrorKind,
   ImporterResult,
   ImportersArgs,
   ImportStyle,

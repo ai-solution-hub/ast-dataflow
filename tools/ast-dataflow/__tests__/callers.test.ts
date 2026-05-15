@@ -101,30 +101,34 @@ describe('callers query — fixture', () => {
     expect(response.results[0].file).toBe('non-caller.ts');
   });
 
-  it('errors on malformed symbol identifier', async () => {
+  it('returns parse_error on malformed symbol identifier (no colon)', async () => {
     const { project, repoRoot } = createProject({
       tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
       repoRoot: FIXTURE_DIR,
     });
 
-    await expect(
-      callers({ symbol: 'no-colon-here' }, project, repoRoot),
-    ).rejects.toThrow(/Symbol must be/);
+    const response = await callers(
+      { symbol: 'no-colon-here' },
+      project,
+      repoRoot,
+    );
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.results).toEqual([]);
   });
 
-  it('errors on unknown symbol in a known file', async () => {
+  it('returns out_of_corpus on unknown symbol in a known file', async () => {
     const { project, repoRoot } = createProject({
       tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
       repoRoot: FIXTURE_DIR,
     });
 
-    await expect(
-      callers(
-        { symbol: 'target.ts:doesNotExist' },
-        project,
-        repoRoot,
-      ),
-    ).rejects.toThrow(/not found/);
+    const response = await callers(
+      { symbol: 'target.ts:doesNotExist' },
+      project,
+      repoRoot,
+    );
+    expect(response.error?.kind).toBe('out_of_corpus');
+    expect(response.results).toEqual([]);
   });
 });
 

@@ -7,6 +7,37 @@ import {
   type Node,
   type ReferenceFindableNode,
 } from 'ts-morph';
+import type { ErrorKind, QueryResponse, BaseResult } from './types';
+
+/**
+ * Build a QueryResponse that carries a structured error (PRODUCT.md P-29).
+ *
+ * The response shape is a valid QueryResponse: `results` is always empty,
+ * `truncated` is false, and `durationMs` records how long was spent before
+ * the error was detected. Callers that need to emit the response immediately
+ * can pass `Date.now() - started` as `durationMs`.
+ */
+export function buildErrorResponse<R extends BaseResult>(
+  query: string,
+  args: Record<string, unknown>,
+  kind: ErrorKind,
+  message: string,
+  hint: string | undefined,
+  durationMs: number,
+): QueryResponse<R> {
+  return {
+    query,
+    args,
+    results: [] as R[],
+    truncated: false,
+    durationMs,
+    error: {
+      kind,
+      message,
+      ...(hint !== undefined ? { hint } : {}),
+    },
+  };
+}
 
 export interface ResolvedSymbol {
   declaration: ReferenceFindableNode & Node;

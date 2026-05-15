@@ -14,6 +14,7 @@ import {
   resolveSymbol,
   findEnclosing,
   toRepoRelative,
+  buildErrorResponse,
 } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
@@ -54,7 +55,38 @@ export async function callers(
   const started = Date.now();
   const limit = args.limit ?? DEFAULT_LIMIT;
 
-  const resolved = resolveSymbol(project, args.symbol, repoRoot);
+  // Validate and resolve the symbol — return structured error on failure (P-29).
+  const sep = args.symbol.lastIndexOf(':');
+  if (sep === -1 || !args.symbol.slice(0, sep) || !args.symbol.slice(sep + 1)) {
+    return buildErrorResponse(
+      'callers',
+      { ...args, limit },
+      'parse_error',
+      `Symbol must be "<file>:<name>"; got "${args.symbol}". Example: "lib/supabase/safe.ts:sb".`,
+      'Use the format <relative-file-path>:<exported-name>.',
+      Date.now() - started,
+    );
+  }
+
+  let resolved: ReturnType<typeof resolveSymbol>;
+  try {
+    resolved = resolveSymbol(project, args.symbol, repoRoot);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    // Classify the error: "File not in project" → unknown_file; anything else
+    // (symbol name not found in a known file) → out_of_corpus.
+    const kind = msg.includes('File not in project') ? 'unknown_file' : 'out_of_corpus';
+    return buildErrorResponse(
+      'callers',
+      { ...args, limit },
+      kind,
+      msg,
+      kind === 'unknown_file'
+        ? 'Verify the file path is correct and relative to the repo root.'
+        : 'Verify the symbol name is exported or declared in the specified file.',
+      Date.now() - started,
+    );
+  }
 
   const references = resolved.declaration.findReferences();
 

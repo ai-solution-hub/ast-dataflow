@@ -36,6 +36,30 @@ const REFERENCE_KINDS: ReferenceKind[] = [
   'typeOnly',
 ];
 
+/**
+ * Emit a query response to stdout (PRODUCT.md P-29).
+ *
+ * Rules:
+ * - Always exits 0 when `response.error` is present (structured error, not crash).
+ * - When `--pretty` is set and `response.error` is present, emits a human-readable
+ *   "error: <kind> — <message>" line before the JSON envelope so the error is
+ *   immediately visible without parsing JSON.
+ * - The full JSON envelope is always emitted so downstream tools can branch on
+ *   `error.kind` without parsing stderr.
+ */
+function emitResponse(
+  response: { error?: { kind: string; message: string; hint?: string }; [k: string]: unknown },
+  pretty: boolean,
+): void {
+  if (pretty && response.error) {
+    console.error(`error: ${response.error.kind} — ${response.error.message}`);
+    if (response.error.hint) {
+      console.error(`hint: ${response.error.hint}`);
+    }
+  }
+  console.log(JSON.stringify(response, null, pretty ? 2 : 0));
+}
+
 function printCatalogue(): void {
   console.log(
     JSON.stringify(
@@ -102,7 +126,7 @@ async function main(): Promise<void> {
         repoRoot,
       );
       const pretty = parsed.flags.pretty === true;
-      console.log(JSON.stringify(response, null, pretty ? 2 : 0));
+      emitResponse(response, pretty);
       return;
     }
     case 'importers': {
@@ -121,7 +145,7 @@ async function main(): Promise<void> {
         repoRoot,
       );
       const pretty = parsed.flags.pretty === true;
-      console.log(JSON.stringify(response, null, pretty ? 2 : 0));
+      emitResponse(response, pretty);
       return;
     }
     case 'references': {
@@ -151,7 +175,7 @@ async function main(): Promise<void> {
         repoRoot,
       );
       const pretty = parsed.flags.pretty === true;
-      console.log(JSON.stringify(response, null, pretty ? 2 : 0));
+      emitResponse(response, pretty);
       return;
     }
     default: {

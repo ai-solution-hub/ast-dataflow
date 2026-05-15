@@ -145,15 +145,15 @@ describe('importers query — fixture', () => {
     expect(noiseRow).toBeUndefined();
   });
 
-  it('errors on empty modulePath', async () => {
+  it('returns parse_error on empty modulePath', async () => {
     const { project, repoRoot } = createProject({
       tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
       repoRoot: FIXTURE_DIR,
     });
 
-    await expect(
-      importers({ modulePath: '' }, project, repoRoot),
-    ).rejects.toThrow(/modulePath/);
+    const response = await importers({ modulePath: '' }, project, repoRoot);
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.results).toEqual([]);
   });
 
   it('confidence is always exact', async () => {

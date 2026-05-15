@@ -6,6 +6,7 @@ import type {
   ImportStyle,
   QueryResponse,
 } from '../types';
+import { buildErrorResponse } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -133,9 +134,13 @@ export async function importers(
   const started = Date.now();
 
   if (!args.modulePath) {
-    throw new Error(
-      'modulePath must be a non-empty string. ' +
-        "Example: '@/lib/ai/digest' or 'lib/ai/digest.ts'.",
+    return buildErrorResponse<ImporterResult>(
+      'importers',
+      { ...args },
+      'parse_error',
+      'modulePath must be a non-empty string.',
+      "Example: '@/lib/ai/digest' or 'lib/ai/digest.ts'.",
+      Date.now() - started,
     );
   }
 
