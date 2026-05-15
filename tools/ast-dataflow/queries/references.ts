@@ -128,7 +128,7 @@ export async function references(
       const sf = node.getSourceFile();
       const isDefinition = ref.isDefinition();
 
-      const kind = isDefinition ? classifyKind(node) : classifyKind(node);
+      const kind = classifyKind(node);
 
       // Apply --kind filter if provided
       if (args.kind && kind !== args.kind) {

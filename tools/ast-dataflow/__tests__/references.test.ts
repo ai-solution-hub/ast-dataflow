@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createProject } from '@/lib/ast-dataflow';
-import { references } from '@/lib/ast-dataflow/queries/references';
+import { createProject, references } from '@/lib/ast-dataflow';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '06-references');
 
@@ -51,7 +50,7 @@ describe('references query — read kind', () => {
 });
 
 describe('references query — write kind', () => {
-  it('classifies LHS of BinaryExpression as write', async () => {
+  it('classifies a mutation assignment as write', async () => {
     const { project, repoRoot } = makeProject();
 
     const response = await references(
@@ -68,7 +67,7 @@ describe('references query — write kind', () => {
 });
 
 describe('references query — reexport kind', () => {
-  it('classifies an ExportSpecifier reference as reexport', async () => {
+  it('classifies a named re-export as reexport', async () => {
     const { project, repoRoot } = makeProject();
 
     const response = await references(
