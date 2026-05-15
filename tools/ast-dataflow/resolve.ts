@@ -10,6 +10,23 @@ import {
 import type { ErrorKind, QueryResponse, BaseResult } from './types';
 
 /**
+ * Typed error thrown by resolveSymbol so callers can classify by `code`
+ * (sentinel) rather than string-matching the error message. Each catch site
+ * maps `code` directly to the QueryResponse error envelope kind.
+ */
+export class AstResolverError extends Error {
+  readonly code: ErrorKind;
+  readonly hint?: string;
+
+  constructor(message: string, code: ErrorKind, hint?: string) {
+    super(message);
+    this.name = 'AstResolverError';
+    this.code = code;
+    this.hint = hint;
+  }
+}
+
+/**
  * Build a QueryResponse that carries a structured error (PRODUCT.md P-29).
  *
  * The response shape is a valid QueryResponse: `results` is always empty,
@@ -57,21 +74,31 @@ export function resolveSymbol(
 ): ResolvedSymbol {
   const sep = symbol.lastIndexOf(':');
   if (sep === -1) {
-    throw new Error(
+    throw new AstResolverError(
       `Symbol must be "<file>:<name>"; got "${symbol}". Example: "lib/supabase/safe.ts:sb".`,
+      'parse_error',
+      'Use the format <relative-file-path>:<exported-name>.',
     );
   }
   const filePart = symbol.slice(0, sep);
   const namePart = symbol.slice(sep + 1);
   if (!filePart || !namePart) {
-    throw new Error(`Empty file or name in symbol "${symbol}".`);
+    throw new AstResolverError(
+      `Empty file or name in symbol "${symbol}".`,
+      'parse_error',
+      'Both the file path and symbol name are required.',
+    );
   }
 
   const absPath = isAbsolute(filePart) ? filePart : resolve(repoRoot, filePart);
 
   const sf = project.getSourceFile(absPath);
   if (!sf) {
-    throw new Error(`File not in project: ${filePart}`);
+    throw new AstResolverError(
+      `File not in project: ${filePart}`,
+      'unknown_file',
+      'Verify the file path is correct and relative to the repo root.',
+    );
   }
 
   // Look for function / method / variable / class with the requested name.
@@ -97,8 +124,10 @@ export function resolveSymbol(
   }
 
   if (candidates.length === 0) {
-    throw new Error(
+    throw new AstResolverError(
       `Symbol "${namePart}" not found in ${filePart}. Looked at functions, classes, methods, variables, and named exports.`,
+      'out_of_corpus',
+      'Verify the symbol name is exported or declared in the specified file.',
     );
   }
 
@@ -111,18 +140,27 @@ export function resolveSymbol(
     return true;
   });
 
-  // Prefer FunctionDeclaration / MethodDeclaration over VariableDeclaration
-  // when the same name appears as both (the function is the truth; the
-  // variable may be a re-export shim).
-  const preferred =
-    unique.find(
-      (c) =>
-        c.getKind() === SyntaxKind.FunctionDeclaration ||
-        c.getKind() === SyntaxKind.MethodDeclaration,
-    ) ?? unique[0];
+  // Prefer FunctionDeclaration / MethodDeclaration when the same name appears
+  // as both a function and a variable — the function is the truth and the
+  // variable is often a re-export shim. If no function/method exists and more
+  // than one non-function candidate survives de-duplication, the symbol is
+  // genuinely ambiguous and the caller must supply a more specific name.
+  const preferredFn = unique.find(
+    (c) =>
+      c.getKind() === SyntaxKind.FunctionDeclaration ||
+      c.getKind() === SyntaxKind.MethodDeclaration,
+  );
+
+  if (!preferredFn && unique.length > 1) {
+    throw new AstResolverError(
+      `Ambiguous symbol: "${namePart}" in ${filePart} resolves to ${unique.length} non-function declarations.`,
+      'ambiguous_symbol',
+      'Rename one declaration or supply a more specific path.',
+    );
+  }
 
   return {
-    declaration: preferred,
+    declaration: preferredFn ?? unique[0],
     declarationFile: filePart,
     declarationName: namePart,
   };

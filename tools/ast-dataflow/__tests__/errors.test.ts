@@ -12,7 +12,12 @@
 
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { callers, importers, createProject } from '@/lib/ast-dataflow';
+import {
+  callers,
+  importers,
+  references,
+  createProject,
+} from '@/lib/ast-dataflow';
 
 const CALLERS_FIXTURE_DIR = resolve(
   __dirname,
@@ -177,57 +182,77 @@ describe('ErrorKind: out_of_corpus', () => {
 
 describe('ErrorKind: ambiguous_symbol', () => {
   /**
-   * The ambiguous_symbol case fires when resolveSymbol finds more than one
-   * candidate declaration after de-duplication. In the callers fixture, no
-   * symbol currently has multiple distinct declarations, so we need a small
-   * inline fixture approach.
+   * Fires when resolveSymbol finds more than one non-function candidate after
+   * de-duplication. The resolver prefers FunctionDeclaration / MethodDeclaration
+   * when one exists (the function+re-export-shim pattern), so a true ambiguity
+   * needs two declarations of the same name where neither is a function.
    *
-   * Strategy: the tsconfig for `01-callers` includes `target.ts` which exports
-   * `target` as a function. We create a project with a source text that
-   * includes a file with two declarations of the same name (overload signatures
-   * count as a single declaration — function overloads are not ambiguous). To
-   * reliably trigger ambiguous_symbol we would need two separate VariableDeclaration
-   * + FunctionDeclaration with the same name, which ts-morph surfaces as two
-   * distinct candidates. We add such a file to the project programmatically.
-   *
-   * NOTE: ts-morph does not allow duplicate identifiers in valid TypeScript
-   * (the compiler would error). We therefore test the `ambiguous_symbol` path
-   * by using `createProject` with a synthetic in-memory source file containing
-   * a re-declaration that ts-morph still indexes (even if it would fail `tsc`).
+   * Fixture: two `export const` declarations with the same name. TypeScript
+   * rejects this at compile time, but ts-morph still parses both into the
+   * AST and `getVariableDeclarations()` returns both — exactly the shape
+   * resolveSymbol must guard against.
    */
-  it('callers returns error.kind = ambiguous_symbol when a symbol has multiple distinct declarations', async () => {
+  it('callers returns error.kind = ambiguous_symbol when two non-function declarations share a name', async () => {
     const { project, repoRoot } = createProject({
       tsConfigFilePath: resolve(CALLERS_FIXTURE_DIR, 'tsconfig.json'),
       repoRoot: CALLERS_FIXTURE_DIR,
     });
 
-    // Add a synthetic source file that declares `dualDeclared` as both a
-    // function and a variable (which ts-morph exposes as two separate candidates
-    // in getFunctions() + getVariableDeclarations()).
     project.createSourceFile(
-      resolve(CALLERS_FIXTURE_DIR, 'dual-declared.ts'),
+      resolve(CALLERS_FIXTURE_DIR, 'dual-const.ts'),
       `
-export function dualDeclared() { return 1; }
-export const dualDeclared = () => 2;
+export const dualConst = 1;
+export const dualConst = () => 2;
 `,
       { overwrite: true },
     );
 
     const response = await callers(
-      { symbol: 'dual-declared.ts:dualDeclared' },
+      { symbol: 'dual-const.ts:dualConst' },
       project,
       repoRoot,
     );
 
-    // If ts-morph de-duplication collapses these to one candidate, we get
-    // results (not an error). Accept both outcomes: either ambiguous_symbol
-    // (two distinct candidates survive de-dup) or a valid result set (TypeScript
-    // prefers the function declaration). The critical invariant is: no throw.
-    expect(response).toBeDefined();
-    expect(Array.isArray(response.results)).toBe(true);
-    if (response.error) {
-      expect(response.error.kind).toBe('ambiguous_symbol');
-    }
+    expect(response.error).toBeDefined();
+    expect(response.error?.kind).toBe('ambiguous_symbol');
+    expect(response.results).toEqual([]);
+    expect(response.error?.message).toMatch(/Ambiguous symbol/);
+  });
+});
+
+// ── references query: structured errors via the same envelope ────────────────
+
+describe('references query — structured error envelope', () => {
+  it('returns error.kind = unknown_file for a file path not in the project', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(CALLERS_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: CALLERS_FIXTURE_DIR,
+    });
+
+    const response = await references(
+      { symbol: 'definitely/not/a/real/file.ts:someSymbol' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error?.kind).toBe('unknown_file');
+    expect(response.results).toEqual([]);
+  });
+
+  it('returns error.kind = parse_error for a malformed symbol', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(CALLERS_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: CALLERS_FIXTURE_DIR,
+    });
+
+    const response = await references(
+      { symbol: 'no-colon-here' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.results).toEqual([]);
   });
 });
 

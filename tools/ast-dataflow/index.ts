@@ -4,6 +4,7 @@ import { Project } from 'ts-morph';
 export { callers } from './queries/callers';
 export { importers } from './queries/importers';
 export { references } from './queries/references';
+export { AstResolverError } from './resolve';
 export type {
   BaseResult,
   CallSiteResult,

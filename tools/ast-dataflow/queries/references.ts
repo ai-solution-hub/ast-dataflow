@@ -5,7 +5,13 @@ import type {
   ReferenceKind,
   QueryResponse,
 } from '../types';
-import { resolveSymbol, findEnclosing, toRepoRelative } from '../resolve';
+import {
+  resolveSymbol,
+  findEnclosing,
+  toRepoRelative,
+  buildErrorResponse,
+  AstResolverError,
+} from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -115,7 +121,22 @@ export async function references(
   const started = Date.now();
   const limit = args.limit ?? DEFAULT_LIMIT;
 
-  const resolved = resolveSymbol(project, args.symbol, repoRoot);
+  let resolved: ReturnType<typeof resolveSymbol>;
+  try {
+    resolved = resolveSymbol(project, args.symbol, repoRoot);
+  } catch (err) {
+    if (err instanceof AstResolverError) {
+      return buildErrorResponse<ReferenceResult>(
+        'references',
+        { ...args, limit },
+        err.code,
+        err.message,
+        err.hint,
+        Date.now() - started,
+      );
+    }
+    throw err;
+  }
 
   const allRefs = resolved.declaration.findReferences();
 
