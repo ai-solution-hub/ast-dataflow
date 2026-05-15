@@ -106,6 +106,20 @@ function resolveSymbol(
   };
 }
 
+/**
+ * Walk up from an ObjectLiteralExpression to find the name of the variable
+ * or parameter that the object is assigned to. Returns '<Object>' if no
+ * named binding is found.
+ */
+function resolveObjectLiteralContainerName(objLiteral: Node): string {
+  const parent = objLiteral.getParent();
+  if (parent?.isKind(SyntaxKind.VariableDeclaration)) {
+    return (parent as { getName: () => string }).getName();
+  }
+  // Object is a call argument, return-value, or nested assignment — unnamed.
+  return '<Object>';
+}
+
 function findEnclosing(node: Node): string {
   let current: Node | undefined = node.getParent();
   while (current) {
@@ -117,18 +131,42 @@ function findEnclosing(node: Node): string {
       case SyntaxKind.MethodDeclaration: {
         const m = current as MethodDeclaration;
         const parent = m.getParent();
-        const className =
-          parent && 'getName' in parent
-            ? (parent as { getName: () => string | undefined }).getName() ??
-              '<anonymous>'
-            : '<anonymous>';
-        return `method:${className}.${m.getName()}`;
+        // Class method: parent has getName() and is not an ObjectLiteralExpression.
+        const isClassParent = parent && 'getName' in parent &&
+          parent.getKind() !== SyntaxKind.ObjectLiteralExpression;
+        const containerName = isClassParent
+          ? ((parent as { getName: () => string | undefined }).getName() ?? '<anonymous>')
+          : (parent ? resolveObjectLiteralContainerName(parent) : '<Object>');
+        return `method:${containerName}.${m.getName()}`;
+      }
+      case SyntaxKind.PropertyAssignment: {
+        // Arrow function or expression assigned as object property: { foo: () => ... }
+        const propName = (current as { getName: () => string }).getName();
+        const objLiteral = current.getParent();
+        const containerName = objLiteral
+          ? resolveObjectLiteralContainerName(objLiteral)
+          : '<Object>';
+        return `method:${containerName}.${propName}`;
       }
       case SyntaxKind.FunctionExpression:
       case SyntaxKind.ArrowFunction: {
         const parent = current.getParent();
+        // Named variable assignment at any scope: const foo = () => {...}
         if (parent?.isKind(SyntaxKind.VariableDeclaration)) {
-          return `fn:${parent.getName()}`;
+          return `fn:${(parent as { getName: () => string }).getName()}`;
+        }
+        // CallExpression argument (callback): xs.map(x => ...), useEffect(() => ...)
+        // Walk past the enclosing CallExpression to find the outer named host.
+        if (parent?.isKind(SyntaxKind.CallExpression)) {
+          // Skip this anonymous arrow and continue walking up from the CallExpression.
+          current = parent.getParent();
+          continue;
+        }
+        // PropertyAssignment value: { foo: () => ... }
+        // The PropertyAssignment case above will handle it — keep walking up.
+        if (parent?.isKind(SyntaxKind.PropertyAssignment)) {
+          current = parent;
+          continue;
         }
         return 'fn:<anonymous>';
       }

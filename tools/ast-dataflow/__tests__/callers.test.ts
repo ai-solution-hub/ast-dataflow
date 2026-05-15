@@ -8,6 +8,12 @@ const FIXTURE_DIR = resolve(
   '01-callers',
 );
 
+const ANON_FIXTURE_DIR = resolve(
+  __dirname,
+  'fixtures',
+  '04-anonymous-enclosings',
+);
+
 describe('callers query — fixture', () => {
   it('finds direct callers across files', async () => {
     const { project, repoRoot } = createProject({
@@ -119,5 +125,91 @@ describe('callers query — fixture', () => {
         repoRoot,
       ),
     ).rejects.toThrow(/not found/);
+  });
+});
+
+describe('callers query — anonymous enclosing resolution', () => {
+  function makeProject() {
+    return createProject({
+      tsConfigFilePath: resolve(ANON_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: ANON_FIXTURE_DIR,
+    });
+  }
+
+  it('PropertyAssignment: method shorthand resolves to method:<obj>.name', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'property-assignment.ts' && r.line === 8);
+    expect(row?.enclosing).toBe('method:myService.doWork');
+  });
+
+  it('PropertyAssignment: arrow-function value resolves to method:<obj>.name', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'property-assignment.ts' && r.line === 16);
+    expect(row?.enclosing).toBe('method:anotherService.transform');
+  });
+
+  it('CallExpression callback: .map() arrow resolves to outer named function', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'callback-map.ts');
+    expect(row?.enclosing).toBe('fn:processItems');
+  });
+
+  it('CallExpression callback: useEffect arrow resolves to outer named fn', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'callback-useeffect.ts');
+    expect(row?.enclosing).toBe('fn:MyComponent');
+  });
+
+  it('module-level export const arrow: resolves to fn:GET', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'module-export-arrow.ts');
+    expect(row?.enclosing).toBe('fn:GET');
+  });
+
+  it('module-level export function declaration: resolves to fn:POST', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'module-export-fn-decl.ts');
+    expect(row?.enclosing).toBe('fn:POST');
+  });
+
+  it('nested callbacks: bubbles up past .then/.map to outer named function', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await callers(
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const row = response.results.find((r) => r.file === 'nested-callbacks.ts');
+    expect(row?.enclosing).toBe('fn:fetchAndProcess');
   });
 });
