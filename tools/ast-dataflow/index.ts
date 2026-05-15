@@ -3,6 +3,7 @@ import { Project } from 'ts-morph';
 
 export { callers } from './queries/callers';
 export { importers } from './queries/importers';
+export { references } from './queries/references';
 export type {
   BaseResult,
   CallSiteResult,
@@ -13,6 +14,9 @@ export type {
   ImportersArgs,
   ImportStyle,
   QueryResponse,
+  ReferenceKind,
+  ReferenceResult,
+  ReferencesArgs,
 } from './types';
 
 export interface CreateProjectOptions {

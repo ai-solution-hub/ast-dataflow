@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { callers, importers, createProject } from '@/lib/ast-dataflow';
+import { callers, importers, references, createProject } from '@/lib/ast-dataflow';
+import type { ReferenceKind } from '@/lib/ast-dataflow';
 
 interface ParsedArgs {
   query: string | undefined;
@@ -26,6 +27,15 @@ function parse(argv: string[]): ParsedArgs {
   return out;
 }
 
+const REFERENCE_KINDS: ReferenceKind[] = [
+  'read',
+  'write',
+  'typeReference',
+  'jsxComponent',
+  'reexport',
+  'typeOnly',
+];
+
 function printCatalogue(): void {
   console.log(
     JSON.stringify(
@@ -43,9 +53,21 @@ function printCatalogue(): void {
             example:
               "bun run ast-dataflow importers --module '@/lib/ai/digest'",
           },
+          {
+            name: 'references',
+            args: [
+              '--symbol <file:name>',
+              `--kind ${REFERENCE_KINDS.join('|')}`,
+              '--limit N',
+              '--json',
+              '--pretty',
+            ],
+            example:
+              "bun run ast-dataflow references --symbol 'types/bid.ts:BidState'",
+          },
         ],
         notes:
-          'S2 — callers + importers queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S3 — callers + importers + references queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
@@ -102,9 +124,39 @@ async function main(): Promise<void> {
       console.log(JSON.stringify(response, null, pretty ? 2 : 0));
       return;
     }
+    case 'references': {
+      const symbol = parsed.flags.symbol;
+      if (typeof symbol !== 'string') {
+        console.error('references requires --symbol <file:name>');
+        console.error("Example: bun run ast-dataflow references --symbol 'types/bid.ts:BidState'");
+        process.exit(2);
+      }
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const kindArg = parsed.flags.kind;
+      const kind =
+        typeof kindArg === 'string' && REFERENCE_KINDS.includes(kindArg as ReferenceKind)
+          ? (kindArg as ReferenceKind)
+          : undefined;
+      if (kindArg && !kind) {
+        console.error(
+          `Invalid --kind value: "${kindArg}". Valid kinds: ${REFERENCE_KINDS.join(', ')}`,
+        );
+        process.exit(2);
+      }
+      const response = await references(
+        { symbol, ...(limit ? { limit } : {}), ...(kind ? { kind } : {}) },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      console.log(JSON.stringify(response, null, pretty ? 2 : 0));
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
-      console.error('Valid queries: callers, importers');
+      console.error('Valid queries: callers, importers, references');
       process.exit(2);
     }
   }

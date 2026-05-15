@@ -48,6 +48,27 @@ export type ImportStyle =
   | 'typeOnly'
   | 'reexport';
 
+export type ReferenceKind =
+  | 'typeReference'
+  | 'jsxComponent'
+  | 'read'
+  | 'write'
+  | 'reexport'
+  | 'typeOnly';
+
+export interface ReferencesArgs {
+  symbol: string;
+  limit?: number;
+  kind?: ReferenceKind;
+}
+
+export interface ReferenceResult extends BaseResult {
+  confidence: 'exact';
+  kind: ReferenceKind;
+  enclosing: string;
+  isDefinition: boolean;
+}
+
 export interface ImporterResult extends BaseResult {
   confidence: 'exact';
   namedImports: string[];
