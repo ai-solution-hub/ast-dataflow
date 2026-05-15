@@ -110,18 +110,56 @@ function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
  *
  * Handles:
  * - Simple: `'project_id, question_text'`
- * - With alias: `'project_id as pid'` (matches on the column name before 'as')
- * - Nested relation syntax: `'id, bid_responses ( id, text )'`  — only top-level
- *   tokens are matched (tokens before the first `(`).
+ * - Supabase colon-alias: `'pid:project_id'` (the actual column is on the
+ *   right of `:`; the left side is the alias used in the result object). The
+ *   target column matches when it appears as the column portion.
+ * - SQL-style whitespace alias: `'project_id as pid'` (matches on the column
+ *   name before 'as'). Supabase-js itself does not use `as`, but the
+ *   tokeniser tolerates whitespace tails defensively.
+ * - Nested relation syntax: `'id, bid_responses ( id, text )'` — only
+ *   top-level tokens are matched (tokens before the first `(`).
  */
 function selectContainsColumn(selectStr: string, targetColumn: string): boolean {
   // Strip nested relation blocks (anything in parentheses including the content).
   const withoutRelations = selectStr.replace(/\(.*?\)/gs, '');
   const tokens = withoutRelations
     .split(',')
-    .map((t) => t.trim().split(/\s+/)[0].trim())  // take only first word (before alias)
+    .map((t) => {
+      const trimmed = t.trim();
+      // Supabase colon-alias: `<alias>:<column>` — the actual column is on
+      // the right of the first `:`. Without a `:`, the whole token is the
+      // column name.
+      const colonIdx = trimmed.indexOf(':');
+      const columnPart = colonIdx >= 0 ? trimmed.slice(colonIdx + 1).trim() : trimmed;
+      // Strip any trailing whitespace-separated alias (defensive against
+      // SQL-style `'project_id as pid'`).
+      return columnPart.split(/\s+/)[0].trim();
+    })
     .filter(Boolean);
   return tokens.includes(targetColumn);
+}
+
+/**
+ * Return true if an object literal has a property whose key matches `name`,
+ * handling both shorthand (`{ project_id }`) and longhand (`{ project_id:
+ * value }`) property assignments.
+ */
+function objectLiteralHasKey(
+  objLiteral: import('ts-morph').ObjectLiteralExpression,
+  name: string,
+): boolean {
+  return objLiteral.getProperties().some((prop) => {
+    const kind = prop.getKind();
+    if (kind === SyntaxKind.PropertyAssignment) {
+      return (prop as import('ts-morph').PropertyAssignment).getName() === name;
+    }
+    if (kind === SyntaxKind.ShorthandPropertyAssignment) {
+      return (
+        prop as import('ts-morph').ShorthandPropertyAssignment
+      ).getName() === name;
+    }
+    return false;
+  });
 }
 
 /**
@@ -206,14 +244,9 @@ function findRpcCalls(sf: SourceFile, column: string): CallExpression[] {
     if (payloadArg.getKind() !== SyntaxKind.ObjectLiteralExpression) continue;
 
     const objLiteral = payloadArg as import('ts-morph').ObjectLiteralExpression;
-    const hasColumn = objLiteral.getProperties().some((prop) => {
-      if (prop.getKind() === SyntaxKind.PropertyAssignment) {
-        const pa = prop as import('ts-morph').PropertyAssignment;
-        return pa.getName() === column;
-      }
-      return false;
-    });
-    if (hasColumn) results.push(callExpr);
+    if (objectLiteralHasKey(objLiteral, column)) {
+      results.push(callExpr);
+    }
   }
 
   return results;
@@ -303,13 +336,7 @@ export async function columnReads(
             const arg = chainArgs[0];
             if (arg.getKind() === SyntaxKind.ObjectLiteralExpression) {
               const objLiteral = arg as import('ts-morph').ObjectLiteralExpression;
-              const matchingProp = objLiteral.getProperties().find((prop) => {
-                if (prop.getKind() === SyntaxKind.PropertyAssignment) {
-                  return (prop as import('ts-morph').PropertyAssignment).getName() === args.column;
-                }
-                return false;
-              });
-              if (matchingProp) {
+              if (objectLiteralHasKey(objLiteral, args.column)) {
                 hit = { method: 'match', columnPath: args.column };
               }
             }
