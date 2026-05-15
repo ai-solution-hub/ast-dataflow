@@ -56,19 +56,6 @@ export async function callers(
   const started = Date.now();
   const limit = args.limit ?? DEFAULT_LIMIT;
 
-  // Validate and resolve the symbol — return structured error on failure (P-29).
-  const sep = args.symbol.lastIndexOf(':');
-  if (sep === -1 || !args.symbol.slice(0, sep) || !args.symbol.slice(sep + 1)) {
-    return buildErrorResponse(
-      'callers',
-      { ...args, limit },
-      'parse_error',
-      `Symbol must be "<file>:<name>"; got "${args.symbol}". Example: "lib/supabase/safe.ts:sb".`,
-      'Use the format <relative-file-path>:<exported-name>.',
-      Date.now() - started,
-    );
-  }
-
   let resolved: ReturnType<typeof resolveSymbol>;
   try {
     resolved = resolveSymbol(project, args.symbol, repoRoot);
