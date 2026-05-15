@@ -1,8 +1,8 @@
 import { resolve } from 'node:path';
 import { Project } from 'ts-morph';
 
-export { callers } from './callers';
-export { importers } from './importers';
+export { callers } from './queries/callers';
+export { importers } from './queries/importers';
 export type {
   BaseResult,
   CallSiteResult,

@@ -5,7 +5,7 @@ import type {
   ImporterResult,
   ImportStyle,
   QueryResponse,
-} from './types';
+} from '../types';
 
 const DEFAULT_LIMIT = 200;
 

@@ -13,7 +13,7 @@ import type {
   CallSiteResult,
   CallResolution,
   QueryResponse,
-} from './types';
+} from '../types';
 
 const DEFAULT_LIMIT = 200;
 
