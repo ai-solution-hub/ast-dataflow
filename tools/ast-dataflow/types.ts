@@ -249,3 +249,64 @@ export interface TypeEvolutionResult extends BaseResult {
   /** Nearest enclosing function/method/class name via findEnclosing. */
   enclosing: string;
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// reexport-chain query (PRODUCT.md invariant 8, R-WP2)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The three kinds of row returned by reexport-chain:
+ *
+ * - declaration — the file where the symbol is originally declared.
+ *                 distance is always 0; throughBarrel is always null.
+ * - reexport    — a barrel file that re-exports the symbol. distance
+ *                 increases by 1 per hop. throughBarrel equals the file
+ *                 itself (the barrel performing the re-export).
+ * - importer    — a real consumer that imports the symbol (directly or
+ *                 via a barrel). distance reflects the number of barrel
+ *                 hops between declaration and this consumer.
+ *                 throughBarrel is null.
+ */
+export type ReexportChainKind = 'declaration' | 'reexport' | 'importer';
+
+/**
+ * Arguments for the reexport-chain query (PRODUCT.md inv. 8).
+ *
+ * - symbol        — the exported symbol name to trace.
+ * - from          — optional repo-root-relative file path that declares
+ *                   the symbol. When omitted the query searches all source
+ *                   files for an exported declaration matching `symbol`.
+ * - excludeTests  — when true, test-file importers are excluded from the
+ *                   importer rows (mirrors dead-exports / column-reads
+ *                   behaviour).
+ * - limit         — max result rows; default 200.
+ */
+export interface ReexportChainArgs {
+  symbol: string;
+  from?: string;
+  excludeTests?: boolean;
+  limit?: number;
+}
+
+/**
+ * One result row for the reexport-chain query.
+ *
+ * - file          — repo-relative POSIX path.
+ * - line, column  — 1-based position of the declaration/re-export/import.
+ * - kind          — 'declaration' | 'reexport' | 'importer'
+ * - symbolName    — the original symbol name as declared in the source file.
+ *                   Preserved across renames (e.g. `export { foo as bar }`
+ *                   still reports symbolName='foo').
+ * - throughBarrel — for reexport rows: the barrel file performing the
+ *                   re-export. null for declaration and importer rows.
+ * - distance      — 0 at the declaration; +1 per barrel hop. Importers
+ *                   carry the cumulative distance from the declaration.
+ * - confidence    — always 'exact' (ts-morph resolver is used directly).
+ */
+export interface ReexportChainResult extends BaseResult {
+  confidence: 'exact';
+  kind: ReexportChainKind;
+  symbolName: string;
+  throughBarrel: string | null;
+  distance: number;
+}

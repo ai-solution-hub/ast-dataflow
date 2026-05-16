@@ -58,3 +58,10 @@ export type {
   TypeEvolutionKind,
   TypeEvolutionResult,
 } from './types';
+
+export { reexportChain } from './queries/reexport-chain';
+export type {
+  ReexportChainArgs,
+  ReexportChainKind,
+  ReexportChainResult,
+} from './types';

@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { callers, columnReads, columnWrites, deadExports, importers, references, typeEvolution, createProject } from '@/lib/ast-dataflow';
+import { callers, columnReads, columnWrites, deadExports, importers, reexportChain, references, typeEvolution, createProject } from '@/lib/ast-dataflow';
 import type { ReferenceKind } from '@/lib/ast-dataflow';
 
 interface ParsedArgs {
@@ -138,9 +138,21 @@ function printCatalogue(): void {
             example:
               'bun scripts/ast-dataflow-cli.ts dead-exports --symbol unusedHelper --exclude-tests',
           },
+          {
+            name: 'reexport-chain',
+            args: [
+              '--symbol <name>',
+              '--from <file>',
+              '--exclude-tests',
+              '--limit N',
+              '--pretty',
+            ],
+            example:
+              'bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
+          },
         ],
         notes:
-          'S5 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S5 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
@@ -344,9 +356,36 @@ async function main(): Promise<void> {
       emitResponse(response, pretty);
       return;
     }
+    case 'reexport-chain': {
+      const symbolArg = parsed.flags.symbol;
+      if (typeof symbolArg !== 'string' || !symbolArg) {
+        console.error('reexport-chain requires --symbol <name>');
+        console.error('Example: bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx');
+        process.exit(2);
+      }
+      const fromArg = parsed.flags.from;
+      const from = typeof fromArg === 'string' ? fromArg : undefined;
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const excludeTests = parsed.flags['exclude-tests'] === true;
+      const response = await reexportChain(
+        {
+          symbol: symbolArg,
+          ...(from ? { from } : {}),
+          ...(limit ? { limit } : {}),
+          ...(excludeTests ? { excludeTests } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
-      console.error('Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports');
+      console.error('Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain');
       process.exit(2);
     }
   }
