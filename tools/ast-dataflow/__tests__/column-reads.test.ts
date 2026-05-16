@@ -238,11 +238,13 @@ describe('column-reads query — wildcard select', () => {
     const wildcardHits = response.results.filter(
       (r) => r.file === 'wildcard-select.ts' && r.method === 'select',
     );
-    expect(wildcardHits.length).toBeGreaterThanOrEqual(1);
-    expect(wildcardHits[0].confidence).toBe('wildcard');
-    expect(wildcardHits[0].columnPath).toBe('*');
-    expect(wildcardHits[0].table).toBe('bid_questions');
-    expect(wildcardHits[0].isTyped).toBe(true);
+    expect(wildcardHits).toHaveLength(1);
+    expect(wildcardHits[0]).toMatchObject({
+      confidence: 'wildcard',
+      columnPath: '*',
+      table: 'bid_questions',
+      isTyped: true,
+    });
   });
 
   it('does not emit wildcard rows for files with only explicit column selects', async () => {
