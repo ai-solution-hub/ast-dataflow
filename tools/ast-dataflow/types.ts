@@ -117,3 +117,28 @@ export interface ColumnReadResult extends BaseResult {
   table: string;        // echo of the table arg
   isTyped: boolean;     // true if the Supabase client is type-instantiated with a row type
 }
+
+export interface ColumnWritesArgs {
+  table: string;
+  column: string;
+  limit?: number;
+  excludeTests?: boolean;
+}
+
+/**
+ * The write methods that column-writes detects.
+ *
+ * - insert  — `.insert(obj | obj[])` — row creation.
+ * - update  — `.update(obj)` — partial or full row update.
+ * - upsert  — `.upsert(obj | obj[])` — insert-or-update.
+ * - match   — `.match(obj)` — WHERE-clause filter; treated as a column
+ *             reference site since it names a column to match on.
+ */
+export type ColumnWriteMethod = 'insert' | 'update' | 'upsert' | 'match';
+
+export interface ColumnWriteResult extends BaseResult {
+  method: ColumnWriteMethod;
+  columnPath: string;  // the matched object property key
+  table: string;       // echo of the table arg
+  isTyped: boolean;    // true if the Supabase client is type-instantiated
+}

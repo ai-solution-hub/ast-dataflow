@@ -5,6 +5,7 @@ export { callers } from './queries/callers';
 export { importers } from './queries/importers';
 export { references } from './queries/references';
 export { columnReads } from './queries/column-reads';
+export { columnWrites } from './queries/column-writes';
 export { AstResolverError } from './resolve';
 export type {
   BaseResult,
@@ -14,6 +15,9 @@ export type {
   ColumnReadMethod,
   ColumnReadResult,
   ColumnReadsArgs,
+  ColumnWriteMethod,
+  ColumnWriteResult,
+  ColumnWritesArgs,
   Confidence,
   ErrorKind,
   ImporterResult,
