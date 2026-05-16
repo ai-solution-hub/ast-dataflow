@@ -320,7 +320,11 @@ export async function columnReads(
             const arg = chainArgs[0];
             if (arg.getKind() === SyntaxKind.StringLiteral) {
               const selectStr = arg.getText().slice(1, -1);
-              if (selectContainsColumn(selectStr, args.column)) {
+              if (selectStr === '*') {
+                // Wildcard select — may read the target column but we cannot
+                // confirm without runtime data. Emit a wildcard-confidence row.
+                hit = { method: 'select', columnPath: '*' };
+              } else if (selectContainsColumn(selectStr, args.column)) {
                 hit = { method: 'select', columnPath: args.column };
               }
             }
@@ -346,11 +350,15 @@ export async function columnReads(
             totalEstimated++;
             if (rows.length < limit) {
               const lineCol = sf.getLineAndColumnAtPos(callExpr.getStart());
+              // Wildcard selects always use 'wildcard' confidence regardless of
+              // client typing — we cannot confirm the specific column is read.
+              const rowConfidence =
+                hit.columnPath === '*' ? ('wildcard' as const) : confidence;
               rows.push({
                 file: relPath,
                 line: lineCol.line,
                 column: lineCol.column,
-                confidence,
+                confidence: rowConfidence,
                 method: hit.method,
                 columnPath: hit.columnPath,
                 table: args.table,

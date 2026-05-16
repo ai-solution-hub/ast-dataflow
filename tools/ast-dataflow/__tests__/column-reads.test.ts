@@ -226,6 +226,41 @@ describe('column-reads query — structured error', () => {
   });
 });
 
+describe('column-reads query — wildcard select', () => {
+  it('detects .select("*") as a wildcard row with confidence="wildcard" and columnPath="*"', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    const wildcardHits = response.results.filter(
+      (r) => r.file === 'wildcard-select.ts' && r.method === 'select',
+    );
+    expect(wildcardHits.length).toBeGreaterThanOrEqual(1);
+    expect(wildcardHits[0].confidence).toBe('wildcard');
+    expect(wildcardHits[0].columnPath).toBe('*');
+    expect(wildcardHits[0].table).toBe('bid_questions');
+    expect(wildcardHits[0].isTyped).toBe(true);
+  });
+
+  it('does not emit wildcard rows for files with only explicit column selects', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // typed-client.ts only has .select('project_id, question_text') — no wildcards
+    const typedWildcardHits = response.results.filter(
+      (r) => r.file === 'typed-client.ts' && r.confidence === 'wildcard',
+    );
+    expect(typedWildcardHits).toHaveLength(0);
+  });
+});
+
 describe('column-reads query — metadata', () => {
   it('echoes table in every result row', async () => {
     const { project, repoRoot } = makeProject();

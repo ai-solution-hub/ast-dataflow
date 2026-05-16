@@ -1,4 +1,4 @@
-export type Confidence = 'exact' | 'inferred' | 'indirect';
+export type Confidence = 'exact' | 'wildcard' | 'indirect';
 
 export type CallResolution =
   | 'direct'
