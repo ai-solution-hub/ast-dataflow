@@ -171,31 +171,29 @@ describe('reexport-chain — scenario 3: two barrel hops yield distance=2 at imp
     });
 
     const reexportRows = response.results.filter((r) => r.kind === 'reexport');
-    expect(reexportRows).toHaveLength(2);
-
-    // First hop barrel-a gets distance 1
-    const barrelARow = reexportRows.find((r) => r.file === 'two-hop-barrel-a.ts');
-    expect(barrelARow).toBeDefined();
-    expect(barrelARow).toMatchObject({
-      file: 'two-hop-barrel-a.ts',
-      kind: 'reexport',
-      symbolName: 'twoHopSymbol',
-      throughBarrel: 'two-hop-barrel-a.ts',
-      distance: 1,
-      confidence: 'exact',
-    });
-
-    // Second hop barrel-b gets distance 2
-    const barrelBRow = reexportRows.find((r) => r.file === 'two-hop-barrel-b.ts');
-    expect(barrelBRow).toBeDefined();
-    expect(barrelBRow).toMatchObject({
-      file: 'two-hop-barrel-b.ts',
-      kind: 'reexport',
-      symbolName: 'twoHopSymbol',
-      throughBarrel: 'two-hop-barrel-b.ts',
-      distance: 2,
-      confidence: 'exact',
-    });
+    // Pin both hops without find()/toBeDefined() — arrayContaining proves the
+    // exact rows exist regardless of result order. toHaveLength(2) above bounds
+    // the array, so this assertion fully constrains both hops.
+    expect(reexportRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: 'two-hop-barrel-a.ts',
+          kind: 'reexport',
+          symbolName: 'twoHopSymbol',
+          throughBarrel: 'two-hop-barrel-a.ts',
+          distance: 1,
+          confidence: 'exact',
+        }),
+        expect.objectContaining({
+          file: 'two-hop-barrel-b.ts',
+          kind: 'reexport',
+          symbolName: 'twoHopSymbol',
+          throughBarrel: 'two-hop-barrel-b.ts',
+          distance: 2,
+          confidence: 'exact',
+        }),
+      ]),
+    );
 
     // Terminal importer gets cumulative distance 2 (two barrel hops)
     const importerRows = response.results.filter((r) => r.kind === 'importer');
