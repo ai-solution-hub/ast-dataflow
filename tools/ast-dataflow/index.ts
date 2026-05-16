@@ -6,6 +6,7 @@ export { importers } from './queries/importers';
 export { references } from './queries/references';
 export { columnReads } from './queries/column-reads';
 export { columnWrites } from './queries/column-writes';
+export { deadExports } from './queries/dead-exports';
 export { AstResolverError } from './resolve';
 export type {
   BaseResult,
@@ -19,6 +20,9 @@ export type {
   ColumnWriteResult,
   ColumnWritesArgs,
   Confidence,
+  DeadExportKind,
+  DeadExportResult,
+  DeadExportsArgs,
   ErrorKind,
   ImporterResult,
   ImportersArgs,
@@ -47,3 +51,10 @@ export function createProject(opts: CreateProjectOptions): AstProject {
   const repoRoot = opts.repoRoot ?? resolve(opts.tsConfigFilePath, '..');
   return { project, repoRoot };
 }
+
+export { typeEvolution } from './queries/type-evolution';
+export type {
+  TypeEvolutionArgs,
+  TypeEvolutionKind,
+  TypeEvolutionResult,
+} from './types';

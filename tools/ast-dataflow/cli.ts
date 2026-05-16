@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { callers, columnReads, columnWrites, importers, references, createProject } from '@/lib/ast-dataflow';
+import { callers, columnReads, columnWrites, deadExports, importers, references, typeEvolution, createProject } from '@/lib/ast-dataflow';
 import type { ReferenceKind } from '@/lib/ast-dataflow';
 
 interface ParsedArgs {
@@ -113,9 +113,34 @@ function printCatalogue(): void {
             example:
               'bun run ast-dataflow column-writes --table bid_questions --column project_id',
           },
+          {
+            name: 'type-evolution',
+            args: [
+              '--type <TypeName>',
+              '--property <propertyName>',
+              '--file <relative-path>',
+              '--exclude-tests',
+              '--limit N',
+              '--pretty',
+            ],
+            example:
+              'bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id',
+          },
+          {
+            name: 'dead-exports',
+            args: [
+              '--symbol <name>',
+              '--symbols <file>',
+              '--exclude-tests',
+              '--limit N',
+              '--pretty',
+            ],
+            example:
+              'bun scripts/ast-dataflow-cli.ts dead-exports --symbol unusedHelper --exclude-tests',
+          },
         ],
         notes:
-          'S4 — callers + importers + references + column-reads + column-writes queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S5 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
@@ -264,9 +289,64 @@ async function main(): Promise<void> {
       emitResponse(response, pretty);
       return;
     }
+    case 'type-evolution': {
+      const typeName = parsed.flags.type;
+      const property = parsed.flags.property;
+      if (typeof typeName !== 'string' || !typeName) {
+        console.error('type-evolution requires --type <TypeName>');
+        console.error('Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id');
+        process.exit(2);
+      }
+      if (typeof property !== 'string' || !property) {
+        console.error('type-evolution requires --property <propertyName>');
+        console.error('Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id');
+        process.exit(2);
+      }
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const fileArg = parsed.flags.file;
+      const file = typeof fileArg === 'string' ? fileArg : undefined;
+      const excludeTests = parsed.flags['exclude-tests'] === true;
+      const response = await typeEvolution(
+        {
+          type: typeName,
+          property,
+          ...(file ? { file } : {}),
+          ...(limit ? { limit } : {}),
+          ...(excludeTests ? { excludeTests } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
+    case 'dead-exports': {
+      const symbolArg = parsed.flags.symbol;
+      const symbolsFileArg = parsed.flags.symbols;
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const excludeTests = parsed.flags['exclude-tests'] === true;
+      const response = await deadExports(
+        {
+          ...(typeof symbolArg === 'string' ? { symbol: symbolArg } : {}),
+          ...(typeof symbolsFileArg === 'string' ? { symbolsFile: symbolsFileArg } : {}),
+          ...(limit ? { limit } : {}),
+          ...(excludeTests ? { excludeTests } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
-      console.error('Valid queries: callers, importers, references, column-reads, column-writes');
+      console.error('Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports');
       process.exit(2);
     }
   }
