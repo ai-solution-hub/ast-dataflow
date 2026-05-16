@@ -113,19 +113,19 @@ describe('importers query — fixture', () => {
       repoRoot,
     );
 
-    const unusedRow = response.results.find(
-      (r) => r.file === 'caller-unused.ts',
-    );
-    expect(unusedRow).toBeDefined();
-    expect(unusedRow?.unused).toBe(true);
+    // Exhaustive expected-unused table for all 7 fixture files
+    const expectedUnused: Record<string, boolean> = {
+      'caller-unused.ts': true,
+      'caller-named.ts': false,
+      'caller-aliased.ts': false,
+      'caller-default.ts': false,
+      'caller-namespace.ts': false,
+      'caller-reexport.ts': false,
+      'caller-typeonly.ts': false,
+    };
 
-    // All other rows (that have named imports and use them) are not unused
     for (const row of response.results) {
-      if (row.file !== 'caller-unused.ts' && row.namedImports.length > 0) {
-        if (row.file !== 'caller-reexport.ts') {
-          expect(row.unused).toBe(false);
-        }
-      }
+      expect(row.unused).toBe(expectedUnused[row.file] ?? false);
     }
   });
 

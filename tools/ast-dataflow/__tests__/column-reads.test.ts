@@ -24,10 +24,16 @@ describe('column-reads query — typed client', () => {
     const selectHits = response.results.filter(
       (r) => r.file === 'typed-client.ts' && r.method === 'select',
     );
-    expect(selectHits.length).toBeGreaterThanOrEqual(1);
-    expect(selectHits[0].isTyped).toBe(true);
-    expect(selectHits[0].confidence).toBe('exact');
-    expect(selectHits[0].table).toBe('bid_questions');
+    // typed-client.ts line 20: .select('project_id, question_text')
+    expect(selectHits).toHaveLength(1);
+    expect(selectHits[0]).toMatchObject({
+      isTyped: true,
+      confidence: 'exact',
+      table: 'bid_questions',
+      columnPath: 'project_id',
+      method: 'select',
+      line: 20,
+    });
   });
 
   it('finds .eq() hit with project_id as column argument', async () => {
@@ -41,9 +47,16 @@ describe('column-reads query — typed client', () => {
     const eqHits = response.results.filter(
       (r) => r.file === 'typed-client.ts' && r.method === 'eq',
     );
-    expect(eqHits.length).toBeGreaterThanOrEqual(1);
-    expect(eqHits[0].isTyped).toBe(true);
-    expect(eqHits[0].confidence).toBe('exact');
+    // typed-client.ts line 25: .eq('project_id', bidId)
+    expect(eqHits).toHaveLength(1);
+    expect(eqHits[0]).toMatchObject({
+      isTyped: true,
+      confidence: 'exact',
+      table: 'bid_questions',
+      columnPath: 'project_id',
+      method: 'eq',
+      line: 25,
+    });
   });
 });
 
@@ -59,9 +72,16 @@ describe('column-reads query — untyped client', () => {
     const selectHits = response.results.filter(
       (r) => r.file === 'untyped-client.ts' && r.method === 'select',
     );
-    expect(selectHits.length).toBeGreaterThanOrEqual(1);
-    expect(selectHits[0].isTyped).toBe(false);
-    expect(selectHits[0].confidence).toBe('indirect');
+    // untyped-client.ts line 10: .select('project_id, question_text')
+    expect(selectHits).toHaveLength(1);
+    expect(selectHits[0]).toMatchObject({
+      isTyped: false,
+      confidence: 'indirect',
+      table: 'bid_questions',
+      columnPath: 'project_id',
+      method: 'select',
+      line: 10,
+    });
   });
 
   it('finds .eq() hit with confidence=indirect and isTyped=false', async () => {
@@ -75,9 +95,16 @@ describe('column-reads query — untyped client', () => {
     const eqHits = response.results.filter(
       (r) => r.file === 'untyped-client.ts' && r.method === 'eq',
     );
-    expect(eqHits.length).toBeGreaterThanOrEqual(1);
-    expect(eqHits[0].isTyped).toBe(false);
-    expect(eqHits[0].confidence).toBe('indirect');
+    // untyped-client.ts line 15: .eq('project_id', bidId)
+    expect(eqHits).toHaveLength(1);
+    expect(eqHits[0]).toMatchObject({
+      isTyped: false,
+      confidence: 'indirect',
+      table: 'bid_questions',
+      columnPath: 'project_id',
+      method: 'eq',
+      line: 15,
+    });
   });
 });
 
@@ -93,10 +120,16 @@ describe('column-reads query — match object', () => {
     const matchHits = response.results.filter(
       (r) => r.file === 'match-object.ts' && r.method === 'match',
     );
-    expect(matchHits.length).toBeGreaterThanOrEqual(2);
-    expect(matchHits[0].isTyped).toBe(true);
-    expect(matchHits[0].confidence).toBe('exact');
-    expect(matchHits[0].columnPath).toBe('project_id');
+    // match-object.ts has exactly 2 match rows: longhand (line 19) + shorthand (line 28)
+    expect(matchHits).toHaveLength(2);
+    const longhand = matchHits.find((r) => r.line === 19);
+    expect(longhand).toMatchObject({
+      isTyped: true,
+      confidence: 'exact',
+      columnPath: 'project_id',
+      method: 'match',
+      file: 'match-object.ts',
+    });
   });
 
   it('finds .match({ project_id }) shorthand hit with method=match', async () => {
@@ -107,12 +140,17 @@ describe('column-reads query — match object', () => {
       repoRoot,
     );
 
-    // Both longhand and shorthand match-object calls must be detected; the
-    // fixture has one of each, so at least 2 match-method hits in this file.
     const matchHits = response.results.filter(
       (r) => r.file === 'match-object.ts' && r.method === 'match',
     );
-    expect(matchHits.length).toBeGreaterThanOrEqual(2);
+    // match-object.ts has exactly 2 match rows: longhand (line 19) + shorthand (line 28)
+    expect(matchHits).toHaveLength(2);
+    const shorthand = matchHits.find((r) => r.line === 28);
+    expect(shorthand).toMatchObject({
+      columnPath: 'project_id',
+      method: 'match',
+      file: 'match-object.ts',
+    });
   });
 
   it('matches Supabase colon-alias select(pid:project_id) as a project_id read', async () => {
@@ -123,13 +161,16 @@ describe('column-reads query — match object', () => {
       repoRoot,
     );
 
-    // The aliased select on the fetchWithColumnAlias chain reads project_id
-    // (aliased as pid) and must register as a select-method hit.
+    // match-object.ts line 39: .select('pid:project_id, question_text') — alias read
     const aliasHits = response.results.filter(
       (r) => r.file === 'match-object.ts' && r.method === 'select',
     );
-    expect(aliasHits.length).toBeGreaterThanOrEqual(1);
-    expect(aliasHits[0].columnPath).toBe('project_id');
+    expect(aliasHits).toHaveLength(1);
+    expect(aliasHits[0]).toMatchObject({
+      columnPath: 'project_id',
+      method: 'select',
+      line: 39,
+    });
   });
 });
 
@@ -155,7 +196,12 @@ describe('column-reads query — excludeTests filter', () => {
       project,
       repoRoot,
     );
-    expect(response.results.length).toBeGreaterThan(0);
+    // Fixture has 8 rows across typed-client.ts (2), untyped-client.ts (2), match-object.ts (4)
+    expect(response.results).toHaveLength(8);
+    const files = response.results.map((r) => r.file);
+    expect(files).toContain('typed-client.ts');
+    expect(files).toContain('untyped-client.ts');
+    expect(files).toContain('match-object.ts');
   });
 
   it('suppresses __tests__/** hits when excludeTests is true', async () => {
@@ -283,6 +329,6 @@ describe('column-reads query — metadata', () => {
       project,
       repoRoot,
     );
-    expect(response.durationMs).toBeGreaterThanOrEqual(0);
+    expect(response.durationMs).toEqual(expect.any(Number));
   });
 });

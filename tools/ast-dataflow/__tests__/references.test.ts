@@ -22,13 +22,18 @@ describe('references query — typeReference kind', () => {
     );
 
     expect(response.query).toBe('references');
-    // There should be at least one typeReference result (in case-typeReference.ts)
+    // case-typeReference.ts line 4: function return type annotation — typeReference
     const typeRefs = response.results.filter((r) => r.kind === 'typeReference');
-    expect(typeRefs.length).toBeGreaterThanOrEqual(1);
     const inFixture = typeRefs.find((r) => r.file === 'case-typeReference.ts');
-    expect(inFixture).toBeDefined();
-    expect(inFixture?.confidence).toBe('exact');
-    expect(inFixture?.isDefinition).toBe(false);
+    expect(inFixture).toMatchObject({
+      file: 'case-typeReference.ts',
+      line: 4,
+      column: 22,
+      confidence: 'exact',
+      kind: 'typeReference',
+      isDefinition: false,
+      enclosing: 'fn:getState',
+    });
   });
 });
 
@@ -43,9 +48,17 @@ describe('references query — read kind', () => {
     );
 
     const readRefs = response.results.filter((r) => r.kind === 'read');
-    expect(readRefs.length).toBeGreaterThanOrEqual(1);
-    const inFixture = readRefs.find((r) => r.file === 'case-read.ts');
-    expect(inFixture).toBeDefined();
+    // case-read.ts line 5: console.log(MY_CONSTANT) — runtime read
+    const inFixture = readRefs.find((r) => r.file === 'case-read.ts' && r.line === 5);
+    expect(inFixture).toMatchObject({
+      file: 'case-read.ts',
+      line: 5,
+      column: 15,
+      confidence: 'exact',
+      kind: 'read',
+      isDefinition: false,
+      enclosing: 'fn:printConstant',
+    });
   });
 });
 
@@ -60,9 +73,17 @@ describe('references query — write kind', () => {
     );
 
     const writeRefs = response.results.filter((r) => r.kind === 'write');
-    expect(writeRefs.length).toBeGreaterThanOrEqual(1);
-    const inFixture = writeRefs.find((r) => r.file === 'case-write.ts');
-    expect(inFixture).toBeDefined();
+    // case-write.ts line 9: writableState += 1 — LHS of BinaryExpression
+    const inFixture = writeRefs.find((r) => r.file === 'case-write.ts' && r.line === 9);
+    expect(inFixture).toMatchObject({
+      file: 'case-write.ts',
+      line: 9,
+      column: 1,
+      confidence: 'exact',
+      kind: 'write',
+      isDefinition: false,
+      enclosing: 'moduleTopLevel',
+    });
   });
 });
 
@@ -77,9 +98,17 @@ describe('references query — reexport kind', () => {
     );
 
     const reexportRefs = response.results.filter((r) => r.kind === 'reexport');
-    expect(reexportRefs.length).toBeGreaterThanOrEqual(1);
+    // case-reexport.ts line 2: export { MY_CONSTANT } from './target'
     const inFixture = reexportRefs.find((r) => r.file === 'case-reexport.ts');
-    expect(inFixture).toBeDefined();
+    expect(inFixture).toMatchObject({
+      file: 'case-reexport.ts',
+      line: 2,
+      column: 10,
+      confidence: 'exact',
+      kind: 'reexport',
+      isDefinition: false,
+      enclosing: 'moduleTopLevel',
+    });
   });
 });
 
@@ -94,9 +123,22 @@ describe('references query — typeOnly kind', () => {
     );
 
     const typeOnlyRefs = response.results.filter((r) => r.kind === 'typeOnly');
-    expect(typeOnlyRefs.length).toBeGreaterThanOrEqual(1);
+    // case-typeOnly.ts line 2: import type { MyState } — typeOnly import
     const inFixture = typeOnlyRefs.find((r) => r.file === 'case-typeOnly.ts');
-    expect(inFixture).toBeDefined();
+    expect(inFixture).toMatchObject({
+      file: 'case-typeOnly.ts',
+      line: 2,
+      column: 15,
+      confidence: 'exact',
+      kind: 'typeOnly',
+      isDefinition: false,
+      enclosing: 'moduleTopLevel',
+    });
+    // Note: case-typeOnly.ts line 4 (`type StateAlias = MyState`) legitimately
+    // produces kind:'typeReference' — a type usage in a type alias is correctly
+    // classified as typeReference, not typeOnly. The priority-rule leak guard
+    // from the audit (no typeReference rows in case-typeOnly.ts) cannot be applied
+    // because the production code correctly emits one for the type alias usage.
   });
 });
 
@@ -111,9 +153,17 @@ describe('references query — jsxComponent kind', () => {
     );
 
     const jsxRefs = response.results.filter((r) => r.kind === 'jsxComponent');
-    expect(jsxRefs.length).toBeGreaterThanOrEqual(1);
+    // case-jsxComponent.tsx line 6: <MyWidget /> — JSX opening element
     const inFixture = jsxRefs.find((r) => r.file === 'case-jsxComponent.tsx');
-    expect(inFixture).toBeDefined();
+    expect(inFixture).toMatchObject({
+      file: 'case-jsxComponent.tsx',
+      line: 6,
+      column: 11,
+      confidence: 'exact',
+      kind: 'jsxComponent',
+      isDefinition: false,
+      enclosing: 'fn:Page',
+    });
   });
 });
 
@@ -154,9 +204,17 @@ describe('references query — general behaviour', () => {
       repoRoot,
     );
 
+    // Expected enclosing per (file, line) for every non-definition row
+    const expectedEnclosing: Record<string, string> = {
+      'target.ts:5': 'fn:myFunction',
+      'case-read.ts:1': 'moduleTopLevel',
+      'case-read.ts:5': 'fn:printConstant',
+      'case-reexport.ts:2': 'moduleTopLevel',
+    };
+
     for (const row of response.results.filter((r) => !r.isDefinition)) {
-      expect(typeof row.enclosing).toBe('string');
-      expect(row.enclosing.length).toBeGreaterThan(0);
+      const key = `${row.file}:${row.line}`;
+      expect(row.enclosing).toBe(expectedEnclosing[key]);
     }
   });
 });

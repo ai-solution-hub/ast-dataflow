@@ -64,8 +64,7 @@ describe('ErrorKind: unknown_file', () => {
     );
 
     expect(response.error?.kind).toBe('unknown_file');
-    expect(typeof response.error?.message).toBe('string');
-    expect(response.error?.message.length).toBeGreaterThan(0);
+    expect(response.error?.message).toMatch(/File not in project/);
   });
 });
 
@@ -89,7 +88,7 @@ describe('ErrorKind: parse_error', () => {
     expect(response.results).toEqual([]);
   });
 
-  it('callers returns error.kind = parse_error for empty symbol string', async () => {
+  it('callers returns parse_error when symbol has empty file or name parts', async () => {
     const { project, repoRoot } = createProject({
       tsConfigFilePath: resolve(CALLERS_FIXTURE_DIR, 'tsconfig.json'),
       repoRoot: CALLERS_FIXTURE_DIR,
@@ -135,8 +134,7 @@ describe('ErrorKind: parse_error', () => {
     );
 
     expect(response.error?.kind).toBe('parse_error');
-    expect(typeof response.error?.message).toBe('string');
-    expect(response.error?.message.length).toBeGreaterThan(0);
+    expect(response.error?.message).toMatch(/Symbol must be/);
   });
 });
 
@@ -173,8 +171,8 @@ describe('ErrorKind: out_of_corpus', () => {
     );
 
     expect(response.error?.kind).toBe('out_of_corpus');
-    expect(typeof response.error?.message).toBe('string');
-    expect(response.error?.message.length).toBeGreaterThan(0);
+    expect(response.error?.message).toMatch(/not found in/);
+    expect(response.error?.hint).toBeDefined();
   });
 });
 
@@ -274,8 +272,7 @@ describe('Error envelope shape', () => {
     expect(response.error).toBeDefined();
     expect(response.results).toEqual([]);
     expect(response.truncated).toBe(false);
-    expect(typeof response.durationMs).toBe('number');
-    expect(response.durationMs).toBeGreaterThanOrEqual(0);
+    expect(response.durationMs).toEqual(expect.any(Number));
   });
 
   it('successful response has no error field', async () => {

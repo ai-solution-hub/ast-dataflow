@@ -58,9 +58,13 @@ describe('callers query — fixture', () => {
     const aliased = response.results.find(
       (r) => r.file === 'caller-aliased.ts',
     );
-    expect(aliased).toBeDefined();
-    expect(aliased?.resolution).toBe('aliased');
-    expect(aliased?.importAlias).toBe('renamedTarget');
+    // caller-aliased.ts calls renamedTarget() on line 4
+    expect(aliased).toMatchObject({
+      resolution: 'aliased',
+      importAlias: 'renamedTarget',
+      file: 'caller-aliased.ts',
+      line: 4,
+    });
   });
 
   it('records the enclosing function name', async () => {
@@ -112,6 +116,8 @@ describe('callers query — fixture', () => {
       project,
       repoRoot,
     );
+    expect(response.query).toBe('callers');
+    expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('parse_error');
     expect(response.results).toEqual([]);
   });
@@ -127,6 +133,8 @@ describe('callers query — fixture', () => {
       project,
       repoRoot,
     );
+    expect(response.query).toBe('callers');
+    expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('out_of_corpus');
     expect(response.results).toEqual([]);
   });
