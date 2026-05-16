@@ -196,12 +196,13 @@ describe('column-reads query — excludeTests filter', () => {
       project,
       repoRoot,
     );
-    // Fixture has 8 rows across typed-client.ts (2), untyped-client.ts (2), match-object.ts (4)
-    expect(response.results).toHaveLength(8);
+    // Fixture has 9 rows: typed-client.ts (2), untyped-client.ts (2), match-object.ts (4), wildcard-select.ts (1)
+    expect(response.results).toHaveLength(9);
     const files = response.results.map((r) => r.file);
     expect(files).toContain('typed-client.ts');
     expect(files).toContain('untyped-client.ts');
     expect(files).toContain('match-object.ts');
+    expect(files).toContain('wildcard-select.ts');
   });
 
   it('suppresses __tests__/** hits when excludeTests is true', async () => {

@@ -19,6 +19,12 @@ const DEFAULT_LIMIT = 200;
  * The set of Supabase-js mutation method names that column-writes inspects.
  * `.match()` is included because it names a column to filter on and is
  * treated as a column reference site (consistent with column-reads).
+ *
+ * `rpc-payload` is declared in the `ColumnWriteMethod` union but is not
+ * detected here — the inspection path is deferred to S5+. Wildcard confidence
+ * (`'wildcard'` from the shared Confidence union) is N/A for writes: Supabase
+ * has no `.insert('*')` equivalent, so a mutation payload either names columns
+ * explicitly (exact / indirect via spread) or is opaque (indirect).
  */
 const WRITE_METHODS: ReadonlySet<string> = new Set([
   'insert',

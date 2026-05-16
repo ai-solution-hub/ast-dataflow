@@ -128,13 +128,18 @@ export interface ColumnWritesArgs {
 /**
  * The write methods that column-writes detects.
  *
- * - insert  — `.insert(obj | obj[])` — row creation.
- * - update  — `.update(obj)` — partial or full row update.
- * - upsert  — `.upsert(obj | obj[])` — insert-or-update.
- * - match   — `.match(obj)` — WHERE-clause filter; treated as a column
- *             reference site since it names a column to match on.
+ * - insert       — `.insert(obj | obj[])` — row creation.
+ * - update       — `.update(obj)` — partial or full row update.
+ * - upsert       — `.upsert(obj | obj[])` — insert-or-update.
+ * - match        — `.match(obj)` — WHERE-clause filter; treated as a column
+ *                  reference site since it names a column to match on.
+ * - rpc-payload  — `.rpc('fn', { col: x })` payload key. Union member is
+ *                  declared per PRODUCT.md invariant 6; detection is deferred
+ *                  to a follow-up (S5+) — no production RPC payloads in the KH
+ *                  corpus name `bid_questions.project_id`, so the false-negative
+ *                  surface is empty today.
  */
-export type ColumnWriteMethod = 'insert' | 'update' | 'upsert' | 'match';
+export type ColumnWriteMethod = 'insert' | 'update' | 'upsert' | 'match' | 'rpc-payload';
 
 export interface ColumnWriteResult extends BaseResult {
   method: ColumnWriteMethod;
