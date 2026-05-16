@@ -90,12 +90,15 @@ describe('dead-exports — fixture 2: export consumed via named import', () => {
     const response = await deadExports({}, project, repoRoot);
     expect(response.error).toBeUndefined();
 
-    // namedImportTarget must not appear in the dead-export results at all,
-    // OR appear with reachableImporters > 0.
-    const rows = response.results.filter((r) => r.symbol === 'namedImportTarget');
-    for (const row of rows) {
-      expect(row.reachableImporters).toBeGreaterThan(0);
-    }
+    // namedImportTarget is reached via `import { namedImportTarget } from ...` in
+    // consumer-named.ts. A reachable importer means the symbol must NEVER be
+    // emitted with reachableImporters === 0. Empty-result is the correct
+    // outcome; any row with reachableImporters > 0 would also be acceptable but
+    // the implementation suppresses non-dead rows.
+    const deadRows = response.results.filter(
+      (r) => r.symbol === 'namedImportTarget' && r.reachableImporters === 0,
+    );
+    expect(deadRows).toHaveLength(0);
   });
 });
 
@@ -109,12 +112,12 @@ describe('dead-exports — fixture 3: export consumed via namespace import', () 
     expect(response.error).toBeUndefined();
 
     // namespaceTarget is reached via `import * as ns from ...` in consumer-namespace.ts.
-    // The namespace import constitutes a real importer — the file IS an importer.
-    const rows = response.results.filter((r) => r.symbol === 'namespaceTarget');
-    // Either no dead row or row has reachableImporters > 0.
-    for (const row of rows) {
-      expect(row.reachableImporters).toBeGreaterThan(0);
-    }
+    // The namespace import constitutes a real importer — namespaceTarget must
+    // never be emitted as dead (reachableImporters === 0).
+    const deadRows = response.results.filter(
+      (r) => r.symbol === 'namespaceTarget' && r.reachableImporters === 0,
+    );
+    expect(deadRows).toHaveLength(0);
   });
 });
 

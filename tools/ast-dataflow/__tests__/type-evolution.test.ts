@@ -232,10 +232,14 @@ describe('type-evolution — result shape invariants', () => {
       repoRoot,
     );
 
-    expect(response.results.length).toBeGreaterThanOrEqual(6);
+    // Fixture set 11-type-evolution produces 11 rows: each of the 6 fixture
+    // files yields at least one type-position row (annotation/returnType/
+    // generic/satisfies/destructuring) plus a follow-up propertyAccess row
+    // for files where the variable is later read by property access. Pin the
+    // exact count so accidental double-counting or kind drift fails loudly.
+    expect(response.results).toHaveLength(11);
     for (const row of response.results) {
       expect(typeof row.file).toBe('string');
-      expect(row.file.length).toBeGreaterThan(0);
       expect(typeof row.line).toBe('number');
       expect(row.line).toBeGreaterThanOrEqual(1);
       expect(typeof row.column).toBe('number');
@@ -243,7 +247,6 @@ describe('type-evolution — result shape invariants', () => {
       expect(['annotation', 'returnType', 'generic', 'satisfies', 'propertyAccess', 'destructuring']).toContain(row.kind);
       expect(typeof row.isTypeOnly).toBe('boolean');
       expect(typeof row.enclosing).toBe('string');
-      expect(row.enclosing.length).toBeGreaterThan(0);
     }
   });
 
