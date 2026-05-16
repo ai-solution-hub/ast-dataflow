@@ -2,7 +2,6 @@ import { readFileSync } from 'node:fs';
 import {
   type Project,
   type SourceFile,
-  type ExportDeclaration,
   type Node,
   type ReferenceFindableNode,
 } from 'ts-morph';
@@ -12,7 +11,7 @@ import type {
   DeadExportKind,
   QueryResponse,
 } from '../types';
-import { buildErrorResponse, toRepoRelative } from '../resolve';
+import { buildErrorResponse, toRepoRelative, walkBarrelChain } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -79,105 +78,7 @@ function countSymbolRefs(
   return { production, testOnly };
 }
 
-// ---------------------------------------------------------------------------
-// Barrel walker (inline per brief — R-WP2 will extract to resolve.ts)
-//
-// Purpose: given a symbol declared in `sourceFile`, check whether any
-// ExportDeclaration in the project re-exports it (one hop only, per brief).
-// Returns the chain of barrel files and the count of real importers reachable
-// through those barrels.
-//
-// Self-contained so R-WP2's extraction is a 1-file lift.
-// Takes `(symbol, project)` and returns `{ chain, reachableImporters }`.
-// ---------------------------------------------------------------------------
-
-interface BarrelWalkResult {
-  /** Repo-relative paths of barrel files that re-export the symbol. */
-  chain: string[];
-  /**
-   * Number of distinct non-test files that import from those barrels
-   * (the "real" consumers we found via the barrel hop).
-   */
-  reachableImporters: number;
-  testOnlyImporters: number;
-}
-
-function walkBarrels(
-  symbolName: string,
-  sourceFile: SourceFile,
-  project: Project,
-  repoRoot: string,
-  excludeTests: boolean,
-): BarrelWalkResult {
-  const sourceAbsPath = sourceFile.getFilePath();
-  const chain: string[] = [];
-  let reachableImporters = 0;
-  let testOnlyImporters = 0;
-
-  // Find all ExportDeclarations in the project that re-export from sourceFile.
-  for (const sf of project.getSourceFiles()) {
-    if (sf.getFilePath() === sourceAbsPath) continue;
-
-    const barrelRelPath = toRepoRelative(repoRoot, sf.getFilePath());
-
-    // Check every `export { X } from '...'` or `export * from '...'` in this file.
-    const exportDecls: ExportDeclaration[] = sf.getExportDeclarations();
-    for (const exportDecl of exportDecls) {
-      const moduleSpecifier = exportDecl.getModuleSpecifierSourceFile();
-      if (!moduleSpecifier) continue;
-      if (moduleSpecifier.getFilePath() !== sourceAbsPath) continue;
-
-      // This file re-exports from our source file.
-      // Check whether the specific symbol is re-exported (not just any symbol).
-      let exportsOurSymbol = false;
-
-      if (exportDecl.isNamespaceExport()) {
-        // `export * from '...'` — all exports are carried through.
-        exportsOurSymbol = true;
-      } else {
-        // `export { X, Y } from '...'`
-        const namedExports = exportDecl.getNamedExports();
-        exportsOurSymbol = namedExports.some((ne) => {
-          // The original name in the source file.
-          const originalName = ne.getName();
-          return originalName === symbolName;
-        });
-      }
-
-      if (!exportsOurSymbol) continue;
-
-      // This barrel re-exports our symbol. Record it.
-      if (!chain.includes(barrelRelPath)) {
-        chain.push(barrelRelPath);
-      }
-
-      // Now check who imports from this barrel file, using file-level check
-      // (barrel consumers import from the barrel, not necessarily the symbol
-      // by name — namespace imports cover all exports).
-      const barrelAbsPath = sf.getFilePath();
-      for (const consumer of project.getSourceFiles()) {
-        if (consumer.getFilePath() === barrelAbsPath) continue;
-        if (consumer.getFilePath() === sourceAbsPath) continue;
-
-        const consumerRelPath = toRepoRelative(repoRoot, consumer.getFilePath());
-        const importsBarrel = consumer.getImportDeclarations().some((imp) => {
-          const resolved = imp.getModuleSpecifierSourceFile();
-          return resolved?.getFilePath() === barrelAbsPath;
-        });
-
-        if (!importsBarrel) continue;
-
-        if (isTestFile(consumerRelPath)) {
-          if (!excludeTests) testOnlyImporters++;
-        } else {
-          reachableImporters++;
-        }
-      }
-    }
-  }
-
-  return { chain, reachableImporters, testOnlyImporters };
-}
+// Barrel walker is now in resolve.ts as walkBarrelChain (extracted by R-WP2).
 
 // ---------------------------------------------------------------------------
 // Extract exports from a source file
@@ -319,7 +220,7 @@ export async function deadExports(
         // escape via a barrel re-export, which findReferences may not count if
         // the barrel importer uses a namespace import or the re-export itself
         // is not referenced directly by name from the importer).
-        const barrel = walkBarrels(
+        const barrel = walkBarrelChain(
           exportEntry.name,
           sf,
           project,

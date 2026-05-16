@@ -2,10 +2,12 @@ import { relative, resolve, isAbsolute } from 'node:path';
 import {
   Project,
   SyntaxKind,
+  type ExportDeclaration,
   type FunctionDeclaration,
   type MethodDeclaration,
   type Node,
   type ReferenceFindableNode,
+  type SourceFile,
 } from 'ts-morph';
 import type { ErrorKind, QueryResponse, BaseResult } from './types';
 
@@ -253,4 +255,125 @@ export function findEnclosing(node: Node): string {
 export function toRepoRelative(repoRoot: string, absPath: string): string {
   const rel = relative(repoRoot, absPath);
   return rel.split('\\').join('/');
+}
+
+// ---------------------------------------------------------------------------
+// Barrel walker (shared between dead-exports and reexport-chain)
+//
+// Given a symbol declared in `sourceFile`, finds every ExportDeclaration in
+// the project that re-exports that symbol (one hop). Returns the chain of
+// barrel file paths and the count of real importers reachable through those
+// barrels.
+//
+// Self-contained: takes (symbolName, sourceFile, project, repoRoot,
+// excludeTests) and returns { chain, reachableImporters, testOnlyImporters }.
+// ---------------------------------------------------------------------------
+
+export interface BarrelWalkResult {
+  /** Repo-relative paths of barrel files that re-export the symbol. */
+  chain: string[];
+  /**
+   * Number of distinct non-test files that import from those barrels
+   * (the "real" consumers found via the barrel hop).
+   */
+  reachableImporters: number;
+  testOnlyImporters: number;
+}
+
+function isTestFilePath(relPath: string): boolean {
+  return (
+    relPath.startsWith('__tests__/') ||
+    relPath.includes('/test/') ||
+    relPath.endsWith('.test.ts') ||
+    relPath.endsWith('.test.tsx') ||
+    relPath.endsWith('.spec.ts') ||
+    relPath.endsWith('.spec.tsx')
+  );
+}
+
+/**
+ * Walk one hop of barrel re-exports from `sourceFile` for the named symbol.
+ *
+ * - Scans every ExportDeclaration in the project for ones that re-export
+ *   from `sourceFile` (either `export { symbolName } from '...'` or
+ *   `export * from '...'`).
+ * - For each matching barrel, counts importers of that barrel file.
+ * - Returns the chain of barrel file paths plus importer counts.
+ */
+export function walkBarrelChain(
+  symbolName: string,
+  sourceFile: SourceFile,
+  project: Project,
+  repoRoot: string,
+  excludeTests: boolean,
+): BarrelWalkResult {
+  const sourceAbsPath = sourceFile.getFilePath();
+  const chain: string[] = [];
+  let reachableImporters = 0;
+  let testOnlyImporters = 0;
+
+  // Find all ExportDeclarations in the project that re-export from sourceFile.
+  for (const sf of project.getSourceFiles()) {
+    if (sf.getFilePath() === sourceAbsPath) continue;
+
+    const barrelRelPath = toRepoRelative(repoRoot, sf.getFilePath());
+
+    // Check every `export { X } from '...'` or `export * from '...'` in this file.
+    const exportDecls: ExportDeclaration[] = sf.getExportDeclarations();
+    for (const exportDecl of exportDecls) {
+      const moduleSpecifier = exportDecl.getModuleSpecifierSourceFile();
+      if (!moduleSpecifier) continue;
+      if (moduleSpecifier.getFilePath() !== sourceAbsPath) continue;
+
+      // This file re-exports from our source file.
+      // Check whether the specific symbol is re-exported (not just any symbol).
+      let exportsOurSymbol = false;
+
+      if (exportDecl.isNamespaceExport()) {
+        // `export * from '...'` — all exports are carried through.
+        exportsOurSymbol = true;
+      } else {
+        // `export { X, Y } from '...'`
+        const namedExports = exportDecl.getNamedExports();
+        exportsOurSymbol = namedExports.some((ne) => {
+          // The original name in the source file (before any rename).
+          // For `export { foo as bar }`, getName() returns 'foo' (the alias
+          // used in the barrel), but getAliasNode()?.getText() is 'bar'.
+          // We match on the original source name, which is getName().
+          const originalName = ne.getName();
+          return originalName === symbolName;
+        });
+      }
+
+      if (!exportsOurSymbol) continue;
+
+      // This barrel re-exports our symbol. Record it.
+      if (!chain.includes(barrelRelPath)) {
+        chain.push(barrelRelPath);
+      }
+
+      // Now check who imports from this barrel file.
+      const barrelAbsPath = sf.getFilePath();
+      for (const consumer of project.getSourceFiles()) {
+        if (consumer.getFilePath() === barrelAbsPath) continue;
+        if (consumer.getFilePath() === sourceAbsPath) continue;
+
+        const consumerRelPath = toRepoRelative(repoRoot, consumer.getFilePath());
+        const importsBarrel = consumer.getImportDeclarations().some((imp) => {
+          const resolved = imp.getModuleSpecifierSourceFile();
+          return resolved?.getFilePath() === barrelAbsPath;
+        });
+
+        if (!importsBarrel) continue;
+
+        if (isTestFilePath(consumerRelPath)) {
+          if (!excludeTests) testOnlyImporters++;
+        } else {
+          reachableImporters++;
+        }
+      }
+    }
+  }
+
+  return { chain, reachableImporters, testOnlyImporters };
 }
