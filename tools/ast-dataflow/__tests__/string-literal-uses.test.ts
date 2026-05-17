@@ -256,7 +256,7 @@ describe('string-literal-uses — result shape invariants', () => {
       repoRoot,
     );
 
-    expect(response.results.length).toBeGreaterThan(0);
+    expect(response.results).toHaveLength(1);
     for (const row of response.results) {
       expect(row.confidence).toBe('exact');
       expect(typeof row.enclosing).toBe('string');

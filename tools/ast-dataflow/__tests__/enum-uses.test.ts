@@ -38,18 +38,16 @@ describe('enum-uses — fixture 1: enum declaration rows', () => {
 
     const declRows = response.results.filter((r) => r.kind === 'declaration');
     // The enum declaration in target-enum.ts must appear.
-    const enumDecl = declRows.find(
-      (r) => r.file === 'target-enum.ts' && r.memberName === null,
+    expect(declRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          file: 'target-enum.ts',
+          kind: 'declaration',
+          memberName: null,
+          confidence: 'exact',
+        }),
+      ]),
     );
-    expect(enumDecl).toBeDefined();
-    expect(enumDecl).toMatchObject({
-      file: 'target-enum.ts',
-      kind: 'declaration',
-      memberName: null,
-      confidence: 'exact',
-    });
-    expect(typeof enumDecl!.line).toBe('number');
-    expect(enumDecl!.line).toBeGreaterThanOrEqual(1);
   });
 
   it('emits declaration rows for each enum member', async () => {
@@ -104,7 +102,7 @@ describe('enum-uses — fixture 2: member access rows', () => {
     // case-member-access.ts: PENDING, ACTIVE, CLOSED (3)
     // target-enum.ts internal use: PENDING in defaultStatus (1)
     // case-aliased-import.ts: OS.ACTIVE, OS.PENDING (2)
-    expect(memberAccessRows.length).toBeGreaterThanOrEqual(3);
+    expect(memberAccessRows).toHaveLength(6);
 
     // All memberAccess rows must carry a non-null memberName
     for (const row of memberAccessRows) {
@@ -123,6 +121,26 @@ describe('enum-uses — fixture 2: member access rows', () => {
       expect(row.enclosing.length).toBeGreaterThan(0);
     }
   });
+
+  it('reports aliased import member access rows (OS.ACTIVE and OS.PENDING) in case-aliased-import.ts', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await enumUses({ enum: 'OrderStatus' }, project, repoRoot);
+
+    expect(response.error).toBeUndefined();
+
+    const aliasedMemberAccessRows = response.results.filter(
+      (r) => r.kind === 'memberAccess' && r.file === 'case-aliased-import.ts',
+    );
+    // case-aliased-import.ts: OS.ACTIVE (line 12) + OS.PENDING (line 15) = 2 memberAccess rows
+    expect(aliasedMemberAccessRows).toHaveLength(2);
+    expect(aliasedMemberAccessRows).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ memberName: 'ACTIVE', file: 'case-aliased-import.ts' }),
+        expect.objectContaining({ memberName: 'PENDING', file: 'case-aliased-import.ts' }),
+      ]),
+    );
+  });
 });
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -140,8 +158,8 @@ describe('enum-uses — fixture 3: type-position rows', () => {
     const typeRows = response.results.filter(
       (r) => r.kind === 'typePosition' && r.file === 'case-type-position.ts',
     );
-    // case-type-position.ts has multiple type-position usages
-    expect(typeRows.length).toBeGreaterThanOrEqual(1);
+    // case-type-position.ts has 5 type-position usages: parameter, return type, variable annotation, type assertion, generic arg
+    expect(typeRows).toHaveLength(5);
 
     for (const row of typeRows) {
       expect(row).toMatchObject({
@@ -156,11 +174,11 @@ describe('enum-uses — fixture 3: type-position rows', () => {
 
     const response = await enumUses({ enum: 'OrderStatus' }, project, repoRoot);
 
-    // case-type-position.ts line 10 has return type `: OrderStatus`
+    // case-type-position.ts: 5 type-position usages (parameter, return type, variable annotation, type assertion, generic arg)
     const typeRows = response.results.filter(
       (r) => r.kind === 'typePosition' && r.file === 'case-type-position.ts',
     );
-    expect(typeRows.length).toBeGreaterThanOrEqual(2);
+    expect(typeRows).toHaveLength(5);
   });
 
   it('reports generic type argument (Array<OrderStatus>) as typePosition', async () => {
@@ -172,7 +190,7 @@ describe('enum-uses — fixture 3: type-position rows', () => {
     const typeRows = response.results.filter(
       (r) => r.kind === 'typePosition' && r.file === 'case-type-position.ts',
     );
-    expect(typeRows.length).toBeGreaterThanOrEqual(3);
+    expect(typeRows).toHaveLength(5);
   });
 
   it('reports aliased import type annotation (OS) as typePosition', async () => {
@@ -184,7 +202,7 @@ describe('enum-uses — fixture 3: type-position rows', () => {
     const typeRows = response.results.filter(
       (r) => r.kind === 'typePosition' && r.file === 'case-aliased-import.ts',
     );
-    expect(typeRows.length).toBeGreaterThanOrEqual(1);
+    expect(typeRows).toHaveLength(1);
   });
 });
 
@@ -209,7 +227,8 @@ describe('enum-uses — fixture 4: member filter narrows results', () => {
     for (const row of memberAccessRows) {
       expect(row.memberName).toBe('PENDING');
     }
-    expect(memberAccessRows.length).toBeGreaterThanOrEqual(1);
+    // target-enum.ts self-use (1) + case-member-access.ts (1) + case-aliased-import.ts OS.PENDING (1) = 3
+    expect(memberAccessRows).toHaveLength(3);
   });
 
   it('excludes ACTIVE member access rows when filtering to PENDING', async () => {
@@ -237,11 +256,15 @@ describe('enum-uses — fixture 4: member filter narrows results', () => {
     );
 
     // The enum-level declaration row is always emitted
-    const enumDeclRow = response.results.find(
-      (r) => r.kind === 'declaration' && r.memberName === null,
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: 'declaration',
+          memberName: null,
+          file: 'target-enum.ts',
+        }),
+      ]),
     );
-    expect(enumDeclRow).toBeDefined();
-    expect(enumDeclRow?.file).toBe('target-enum.ts');
   });
 });
 

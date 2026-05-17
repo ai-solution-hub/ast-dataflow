@@ -40,9 +40,9 @@ function classifyLiteralKind(node: Node): StringLiteralUseKind | null {
     return 'jsxProp';
   }
 
-  // Check grandparent for the JsxAttribute case where there is no JsxExpression wrapper.
-  // In ts-morph/TSC: JsxAttribute.initializer can be a StringLiteral directly.
-  // (The ts-morph JsxAttribute getInitializer() returns the node as-is for string literals.)
+  // Check grandparent for the JsxAttribute case where the parent IS a JsxExpression wrapper
+  // (e.g. <Comp prop={'value'} />). The direct-JsxAttribute case for unwrapped string literals
+  // is caught above.
   const grandParent = parent.getParent();
 
   if (grandParent) {
