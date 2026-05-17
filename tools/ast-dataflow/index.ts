@@ -65,3 +65,19 @@ export type {
   ReexportChainKind,
   ReexportChainResult,
 } from './types';
+
+// --- enum-uses ---
+export { enumUses } from './queries/enum-uses';
+export type {
+  EnumUsesArgs,
+  EnumUseKind,
+  EnumUseResult,
+} from './types';
+
+// --- string-literal-uses ---
+export { stringLiteralUses } from './queries/string-literal-uses';
+export type {
+  StringLiteralUsesArgs,
+  StringLiteralUseKind,
+  StringLiteralUseResult,
+} from './types';

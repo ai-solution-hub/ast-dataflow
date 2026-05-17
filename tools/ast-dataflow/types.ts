@@ -310,3 +310,110 @@ export interface ReexportChainResult extends BaseResult {
   throughBarrel: string | null;
   distance: number;
 }
+
+// --- enum-uses ---
+
+/**
+ * Arguments for the enum-uses query (PRODUCT.md inv. 11, R-WP5).
+ *
+ * - enum    — the TypeScript enum name to probe. E.g. `'OrderStatus'`.
+ * - member  — optional member name to filter results. E.g. `'PENDING'`.
+ *             When supplied, memberAccess rows are filtered to that member only;
+ *             declaration/typePosition rows for irrelevant members are dropped.
+ *             The enum-level declaration row is always included.
+ * - limit   — max result rows; default 200.
+ */
+export interface EnumUsesArgs {
+  enum: string;
+  member?: string;
+  limit?: number;
+}
+
+/**
+ * The three kinds of row returned by enum-uses:
+ *
+ * - declaration  — the site where the enum or one of its members is declared.
+ * - memberAccess — a PropertyAccessExpression `EnumName.MEMBER` at a call site.
+ * - typePosition — the enum name appears in a type-annotation position
+ *                  (parameter type, return type, generic argument, satisfies clause,
+ *                  variable annotation, type alias RHS).
+ */
+export type EnumUseKind = 'declaration' | 'memberAccess' | 'typePosition';
+
+/**
+ * One result row for the enum-uses query.
+ *
+ * - file       — repo-relative POSIX path.
+ * - line       — 1-based line number.
+ * - column     — 1-based column number.
+ * - kind       — 'declaration' | 'memberAccess' | 'typePosition'
+ * - memberName — for declaration rows: the enum member name (or null for the
+ *                enum-level declaration itself). For memberAccess rows: the
+ *                accessed member name. For typePosition rows: null (the whole
+ *                enum is referenced as a type, not a specific member).
+ * - enclosing  — nearest enclosing named function/method/module scope via
+ *                findEnclosing.
+ * - confidence — always 'exact' (ts-morph resolver is used directly).
+ */
+export interface EnumUseResult extends BaseResult {
+  confidence: 'exact';
+  kind: EnumUseKind;
+  memberName: string | null;
+  enclosing: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// string-literal-uses query (PRODUCT.md invariant 10, R-WP4)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The five call-site context kinds that string-literal-uses classifies.
+ *
+ * - viMock    — the string is the first argument to vi.mock(...)
+ *               (the path Vitest will stub at module resolution time).
+ * - jsxProp   — the string is the value of a JSX attribute.
+ *               e.g. `<a href="/page" />`, `<img src="..." />`
+ * - sqlTag    — the string is the content of a sql`` tagged template literal.
+ *               e.g. `sql\`SELECT * FROM foo\``
+ * - envKey    — the string is the bracket-access key on process.env.
+ *               e.g. `process.env['MY_KEY']`
+ * - argument  — the string is a generic argument in a CallExpression that
+ *               does not match any of the more-specific kinds above.
+ */
+export type StringLiteralUseKind =
+  | 'viMock'
+  | 'jsxProp'
+  | 'sqlTag'
+  | 'envKey'
+  | 'argument';
+
+/**
+ * Arguments for the string-literal-uses query (PRODUCT.md inv. 10).
+ *
+ * - value  — the exact string literal value to search for (required).
+ *            e.g. '@/lib/foo', 'BID_DRAFT', 'project_id'.
+ * - limit  — max result rows; default 200.
+ */
+export interface StringLiteralUsesArgs {
+  value: string;
+  limit?: number;
+}
+
+/**
+ * One result row for the string-literal-uses query.
+ *
+ * - file      — repo-relative POSIX path.
+ * - line      — 1-based line number of the string literal.
+ * - column    — 1-based column number of the string literal.
+ * - kind      — the call-site context classification.
+ * - enclosing — FQN of the nearest enclosing function/method/class via
+ *               findEnclosing (e.g. 'fn:myHelper', 'method:MyClass.doThing',
+ *               'moduleTopLevel').
+ * - confidence — always 'exact' (literal value is matched directly, not
+ *                heuristically).
+ */
+export interface StringLiteralUseResult extends BaseResult {
+  confidence: 'exact';
+  kind: StringLiteralUseKind;
+  enclosing: string;
+}

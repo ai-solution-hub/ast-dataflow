@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { callers, columnReads, columnWrites, deadExports, importers, reexportChain, references, typeEvolution, createProject } from '@/lib/ast-dataflow';
+import { callers, columnReads, columnWrites, deadExports, enumUses, importers, reexportChain, references, stringLiteralUses, typeEvolution, createProject } from '@/lib/ast-dataflow';
 import type { ReferenceKind } from '@/lib/ast-dataflow';
 
 interface ParsedArgs {
@@ -150,9 +150,28 @@ function printCatalogue(): void {
             example:
               'bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
           },
+          // --- enum-uses ---
+          {
+            name: 'enum-uses',
+            args: [
+              '--enum <EnumName>',
+              '--member <MemberName>',
+              '--limit N',
+              '--pretty',
+            ],
+            example:
+              'bun scripts/ast-dataflow-cli.ts enum-uses --enum OrderStatus --member PENDING',
+          },
+          // --- string-literal-uses ---
+          {
+            name: 'string-literal-uses',
+            args: ['--value <literal>', '--limit N', '--pretty'],
+            example:
+              "bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'",
+          },
         ],
         notes:
-          'S5 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S6 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
@@ -383,9 +402,58 @@ async function main(): Promise<void> {
       emitResponse(response, pretty);
       return;
     }
+    // --- enum-uses ---
+    case 'enum-uses': {
+      const enumName = parsed.flags.enum;
+      if (typeof enumName !== 'string' || !enumName) {
+        console.error('enum-uses requires --enum <EnumName>');
+        console.error('Example: bun scripts/ast-dataflow-cli.ts enum-uses --enum OrderStatus');
+        process.exit(2);
+      }
+      const memberArg = parsed.flags.member;
+      const member = typeof memberArg === 'string' ? memberArg : undefined;
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const response = await enumUses(
+        {
+          enum: enumName,
+          ...(member ? { member } : {}),
+          ...(limit ? { limit } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
+    // --- string-literal-uses ---
+    case 'string-literal-uses': {
+      const valueArg = parsed.flags.value;
+      if (typeof valueArg !== 'string' || !valueArg) {
+        console.error('string-literal-uses requires --value <literal>');
+        console.error("Example: bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'");
+        process.exit(2);
+      }
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+      const response = await stringLiteralUses(
+        {
+          value: valueArg,
+          ...(limit ? { limit } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
-      console.error('Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain');
+      console.error('Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses');
       process.exit(2);
     }
   }
