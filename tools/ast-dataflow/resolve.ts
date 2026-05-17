@@ -280,7 +280,7 @@ export interface BarrelWalkResult {
   testOnlyImporters: number;
 }
 
-function isTestFilePath(relPath: string): boolean {
+export function isTestFilePath(relPath: string): boolean {
   return (
     relPath.startsWith('__tests__/') ||
     relPath.includes('/test/') ||

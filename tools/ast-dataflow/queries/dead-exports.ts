@@ -11,24 +11,9 @@ import type {
   DeadExportKind,
   QueryResponse,
 } from '../types';
-import { buildErrorResponse, toRepoRelative, walkBarrelChain } from '../resolve';
+import { buildErrorResponse, toRepoRelative, walkBarrelChain, isTestFilePath } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
-
-// ---------------------------------------------------------------------------
-// Test-file heuristic (inline per brief — deferred polish for R-WP2)
-// ---------------------------------------------------------------------------
-
-function isTestFile(relPath: string): boolean {
-  return (
-    relPath.startsWith('__tests__/') ||
-    relPath.includes('/test/') ||
-    relPath.endsWith('.test.ts') ||
-    relPath.endsWith('.test.tsx') ||
-    relPath.endsWith('.spec.ts') ||
-    relPath.endsWith('.spec.tsx')
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Symbol-level reference counting
@@ -64,7 +49,7 @@ function countSymbolRefs(
         if (refFile === sourceAbsPath) continue;
 
         const relPath = toRepoRelative(repoRoot, refFile);
-        if (isTestFile(relPath)) {
+        if (isTestFilePath(relPath)) {
           if (!excludeTests) testOnly++;
         } else {
           production++;
@@ -199,7 +184,7 @@ export async function deadExports(
       const relPath = toRepoRelative(repoRoot, sf.getFilePath());
 
       // Skip test files as sources of exports-to-check.
-      if (isTestFile(relPath)) continue;
+      if (isTestFilePath(relPath)) continue;
 
       const exports = extractExports(sf);
 

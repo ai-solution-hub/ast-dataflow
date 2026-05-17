@@ -8,24 +8,9 @@ import type {
   ReexportChainResult,
   QueryResponse,
 } from '../types';
-import { buildErrorResponse, toRepoRelative } from '../resolve';
+import { buildErrorResponse, toRepoRelative, isTestFilePath } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
-
-// ---------------------------------------------------------------------------
-// Test-file heuristic (mirrors dead-exports / column-reads)
-// ---------------------------------------------------------------------------
-
-function isTestFile(relPath: string): boolean {
-  return (
-    relPath.startsWith('__tests__/') ||
-    relPath.includes('/test/') ||
-    relPath.endsWith('.test.ts') ||
-    relPath.endsWith('.test.tsx') ||
-    relPath.endsWith('.spec.ts') ||
-    relPath.endsWith('.spec.tsx')
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Find the declaration source file for a named symbol
@@ -221,7 +206,7 @@ function buildReexportChain(
         if (!importsBarrel) continue;
 
         // Skip test files when excludeTests is set.
-        if (excludeTests && isTestFile(consumerRelPath)) continue;
+        if (excludeTests && isTestFilePath(consumerRelPath)) continue;
 
         // A barrel re-export of this barrel is not an "importer" — it's a
         // further hop. Only emit importer rows for files that are NOT
@@ -268,7 +253,7 @@ function buildReexportChain(
     if (visitedBarrels.has(consumerAbsPath)) continue;
 
     const consumerRelPath = toRepoRelative(repoRoot, consumerAbsPath);
-    if (excludeTests && isTestFile(consumerRelPath)) continue;
+    if (excludeTests && isTestFilePath(consumerRelPath)) continue;
 
     const importDecl = sf.getImportDeclarations().find((imp) => {
       const resolved = imp.getModuleSpecifierSourceFile();
