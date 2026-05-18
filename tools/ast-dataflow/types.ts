@@ -433,7 +433,7 @@ export interface StringLiteralUseResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// flow-trace query (ROADMAP R-WP6, flow-trace-TECH.md)
+// flow-trace query (ROADMAP R-WP6; see TECH.md §Query implementations → flow-trace)
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
