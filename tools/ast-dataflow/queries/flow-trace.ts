@@ -292,7 +292,7 @@ const MUTATION_METHODS: ReadonlySet<string> = new Set([
  * typically non-terminal (e.g. `.insert({...}).select()` — here .select is
  * a modifier, not the canonical sink).
  *
- * `fetch` and `axios` calls are detected separately (see FETCH_METHODS).
+ * `fetch` and `axios` detection is not yet implemented; deferred to a future WP.
  */
 const SUPABASE_SINK_METHODS: ReadonlySet<string> = new Set([
   'insert',

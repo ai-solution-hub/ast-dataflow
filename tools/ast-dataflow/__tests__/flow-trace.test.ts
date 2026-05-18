@@ -634,6 +634,7 @@ describe('flow-trace — indirect tier (dynamic property access)', () => {
       expect.arrayContaining([
         expect.objectContaining({
           hop: 2,
+          kind: 'assignment',
           confidence: 'indirect',
           file: '10-indirect.ts',
           parentHop: 1,
