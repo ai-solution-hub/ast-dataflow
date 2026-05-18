@@ -18,7 +18,9 @@ export interface ChangeReport {
   generatedAt: Date;
 }
 
-export async function generateChangeReport(title: string): Promise<ChangeReport> {
+export async function generateChangeReport(
+  title: string,
+): Promise<ChangeReport> {
   return {
     id: crypto.randomUUID(),
     title,

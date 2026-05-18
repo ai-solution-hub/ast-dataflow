@@ -377,11 +377,30 @@ describe('type-drift-detect — D-17: allowlist support', () => {
         `export async function fetchAllowed() { return fetchJson<AllowedResponse>('/api/x'); }\n`,
     );
     // Create allowlist
-    mkdirSync(join(tmpDir, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline'), { recursive: true });
+    mkdirSync(
+      join(
+        tmpDir,
+        'docs',
+        'specs',
+        'ast-dataflow-tool',
+        'type-safety-pipeline',
+      ),
+      { recursive: true },
+    );
     writeFileSync(
-      join(tmpDir, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json'),
+      join(
+        tmpDir,
+        'docs',
+        'specs',
+        'ast-dataflow-tool',
+        'type-safety-pipeline',
+        'allowlist.json',
+      ),
       JSON.stringify([
-        { interface: 'AllowedResponse', reason: 'Third-party API shape, not ours to annotate.' },
+        {
+          interface: 'AllowedResponse',
+          reason: 'Third-party API shape, not ours to annotate.',
+        },
       ]),
     );
   });
@@ -433,12 +452,22 @@ describe('type-drift-detect — D-21: --ci does not mutate baseline', () => {
     writeFileSync(
       join(tmpDir, 'tsconfig.json'),
       JSON.stringify({
-        compilerOptions: { target: 'ES2020', module: 'ESNext', moduleResolution: 'bundler', strict: true, baseUrl: '.', skipLibCheck: true },
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          baseUrl: '.',
+          skipLibCheck: true,
+        },
         include: ['types/**/*.ts', 'lib/**/*.ts', 'app/**/*.ts'],
       }),
     );
     mkdirSync(join(tmpDir, 'types'), { recursive: true });
-    writeFileSync(join(tmpDir, 'types', 'r.ts'), `export interface CiTestResponse { ok: boolean; }\n`);
+    writeFileSync(
+      join(tmpDir, 'types', 'r.ts'),
+      `export interface CiTestResponse { ok: boolean; }\n`,
+    );
     mkdirSync(join(tmpDir, 'lib', 'query'), { recursive: true });
     writeFileSync(
       join(tmpDir, 'lib', 'query', 'fetchers.ts'),
@@ -451,7 +480,10 @@ describe('type-drift-detect — D-21: --ci does not mutate baseline', () => {
     baselineContent = JSON.stringify([
       { interface: 'CiTestResponse', declaredAt: { file: 'types/r.ts' } },
     ]);
-    writeFileSync(join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'), baselineContent);
+    writeFileSync(
+      join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'),
+      baselineContent,
+    );
   });
 
   afterEach(() => {
@@ -486,12 +518,22 @@ describe('type-drift-detect — D-19: --ci mode exits non-zero on new rows', () 
     writeFileSync(
       join(tmpDir, 'tsconfig.json'),
       JSON.stringify({
-        compilerOptions: { target: 'ES2020', module: 'ESNext', moduleResolution: 'bundler', strict: true, baseUrl: '.', skipLibCheck: true },
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          baseUrl: '.',
+          skipLibCheck: true,
+        },
         include: ['types/**/*.ts', 'lib/**/*.ts'],
       }),
     );
     mkdirSync(join(tmpDir, 'types'), { recursive: true });
-    writeFileSync(join(tmpDir, 'types', 'r.ts'), `export interface NewResponse { value: number; }\n`);
+    writeFileSync(
+      join(tmpDir, 'types', 'r.ts'),
+      `export interface NewResponse { value: number; }\n`,
+    );
     mkdirSync(join(tmpDir, 'lib', 'query'), { recursive: true });
     writeFileSync(
       join(tmpDir, 'lib', 'query', 'fetchers.ts'),
@@ -501,7 +543,10 @@ describe('type-drift-detect — D-19: --ci mode exits non-zero on new rows', () 
     );
     // Empty baseline — NewResponse is NOT in it
     mkdirSync(join(tmpDir, 'docs', 'generated'), { recursive: true });
-    writeFileSync(join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'), '[]');
+    writeFileSync(
+      join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'),
+      '[]',
+    );
   });
 
   afterEach(() => {
@@ -516,7 +561,9 @@ describe('type-drift-detect — D-19: --ci mode exits non-zero on new rows', () 
     const response = await typeDriftDetect({ ci: true }, project, repoRoot);
 
     // The response carries the newSinceBaseline flag so the CLI can exit non-zero
-    expect((response as { newSinceBaseline?: string[] }).newSinceBaseline).toContain('NewResponse');
+    expect(
+      (response as { newSinceBaseline?: string[] }).newSinceBaseline,
+    ).toContain('NewResponse');
   });
 });
 
@@ -532,12 +579,22 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
     writeFileSync(
       join(tmpDir, 'tsconfig.json'),
       JSON.stringify({
-        compilerOptions: { target: 'ES2020', module: 'ESNext', moduleResolution: 'bundler', strict: true, baseUrl: '.', skipLibCheck: true },
+        compilerOptions: {
+          target: 'ES2020',
+          module: 'ESNext',
+          moduleResolution: 'bundler',
+          strict: true,
+          baseUrl: '.',
+          skipLibCheck: true,
+        },
         include: ['types/**/*.ts', 'lib/**/*.ts'],
       }),
     );
     mkdirSync(join(tmpDir, 'types'), { recursive: true });
-    writeFileSync(join(tmpDir, 'types', 'r.ts'), `export interface SomeResponse { ok: boolean; }\n`);
+    writeFileSync(
+      join(tmpDir, 'types', 'r.ts'),
+      `export interface SomeResponse { ok: boolean; }\n`,
+    );
     // Provide a lib/query/fetchers.ts with a real fetchJson call so the
     // no-fetchers-found branch does not fire before the allowlist is parsed.
     mkdirSync(join(tmpDir, 'lib', 'query'), { recursive: true });
@@ -548,9 +605,25 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
         `export async function fetchSome() { return fetchJson<SomeResponse>('/api/some'); }\n`,
     );
     // Write malformed allowlist
-    mkdirSync(join(tmpDir, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline'), { recursive: true });
+    mkdirSync(
+      join(
+        tmpDir,
+        'docs',
+        'specs',
+        'ast-dataflow-tool',
+        'type-safety-pipeline',
+      ),
+      { recursive: true },
+    );
     writeFileSync(
-      join(tmpDir, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json'),
+      join(
+        tmpDir,
+        'docs',
+        'specs',
+        'ast-dataflow-tool',
+        'type-safety-pipeline',
+        'allowlist.json',
+      ),
       '{ invalid json',
     );
   });

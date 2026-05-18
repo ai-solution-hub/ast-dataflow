@@ -29,7 +29,11 @@ vi.mock('@/lib/reports/generate-report');
 
 // UNMISSED SITE 2: string argument still uses old function name as a key
 declare function registerMock(name: string, impl: unknown): void;
-registerMock('generateReport', () => ({ id: 'mock-id', title: 'mock', generatedAt: new Date() }));
+registerMock('generateReport', () => ({
+  id: 'mock-id',
+  title: 'mock',
+  generatedAt: new Date(),
+}));
 
 // Correct usage of the renamed symbol (TypeScript-resolved, not a string)
 const report = generateChangeReport('test title');

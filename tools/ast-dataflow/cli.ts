@@ -197,8 +197,7 @@ function printCatalogue(): void {
               '[--update-baseline]',
               '[--json | --pretty]',
             ],
-            example:
-              'bun run ast-dataflow type-drift-detect --pretty',
+            example: 'bun run ast-dataflow type-drift-detect --pretty',
           },
           // --- flow-trace ---
           {
@@ -264,8 +263,14 @@ function renderMarkdownReport(results: TypeDriftResult[]): string {
     key: TypeDriftResult['classification'];
     heading: string;
   }> = [
-    { key: 'fetcher-only', heading: 'Fetcher-Only (Gap — no route annotation)' },
-    { key: 'route-only', heading: 'Route-Only (Lower-risk — no matching fetcher generic)' },
+    {
+      key: 'fetcher-only',
+      heading: 'Fetcher-Only (Gap — no route annotation)',
+    },
+    {
+      key: 'route-only',
+      heading: 'Route-Only (Lower-risk — no matching fetcher generic)',
+    },
     { key: 'enforced', heading: 'Enforced (Symmetric usage)' },
     { key: 'unused', heading: 'Unused (Neither fetcher nor route)' },
   ];
@@ -686,7 +691,10 @@ async function main(): Promise<void> {
         typeof maxDepthRaw === 'string'
           ? Number.parseInt(maxDepthRaw, 10)
           : undefined;
-      if (maxDepth !== undefined && (Number.isNaN(maxDepth) || maxDepth < 1 || maxDepth > 20)) {
+      if (
+        maxDepth !== undefined &&
+        (Number.isNaN(maxDepth) || maxDepth < 1 || maxDepth > 20)
+      ) {
         console.error('--max-depth must be an integer between 1 and 20');
         process.exit(2);
       }

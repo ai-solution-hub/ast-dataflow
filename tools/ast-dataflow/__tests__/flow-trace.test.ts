@@ -794,7 +794,7 @@ describe('flow-trace — cycle detection', () => {
       {
         originFile: '08-cycle.ts',
         originLine: 17,
-        originColumn: 7,  // 'a' in `let a = seed`
+        originColumn: 7, // 'a' in `let a = seed`
       },
       project,
       repoRoot,

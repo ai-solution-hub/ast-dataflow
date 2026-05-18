@@ -80,15 +80,8 @@ export type {
 
 // --- flow-trace ---
 export { flowTrace } from './queries/flow-trace';
-export type {
-  FlowTraceArgs,
-  FlowTraceHopKind,
-  FlowTraceRow,
-} from './types';
+export type { FlowTraceArgs, FlowTraceHopKind, FlowTraceRow } from './types';
 
 // --- type-drift-detect ---
 export { typeDriftDetect } from './queries/type-drift-detect';
-export type {
-  TypeDriftDetectArgs,
-  TypeDriftResult,
-} from './types';
+export type { TypeDriftDetectArgs, TypeDriftResult } from './types';

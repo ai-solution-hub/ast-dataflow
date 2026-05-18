@@ -10,10 +10,5 @@
     },
     "skipLibCheck": true
   },
-  "include": [
-    "types/**/*.ts",
-    "lib/**/*.ts",
-    "app/**/*.ts",
-    "__tests__/**/*.ts"
-  ]
+  "include": ["types/**/*.ts", "lib/**/*.ts", "app/**/*.ts", "__tests__/**/*.ts"]
 }

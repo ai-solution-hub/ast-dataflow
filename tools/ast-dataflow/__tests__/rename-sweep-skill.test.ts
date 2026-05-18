@@ -155,7 +155,10 @@ describe('rename-sweep Q2 — importers: no file imports the old module path', (
     // consumer-renamed.ts and test-with-missed-string.ts both import post-rename-source.ts.
     const files = response.results.map((r) => r.file).sort();
     expect(files).toHaveLength(2);
-    expect(files).toEqual(['consumer-renamed.ts', 'test-with-missed-string.ts']);
+    expect(files).toEqual([
+      'consumer-renamed.ts',
+      'test-with-missed-string.ts',
+    ]);
   });
 });
 
@@ -208,7 +211,11 @@ describe('rename-sweep battery — combined result shape', () => {
 
     // Run both Q1 passes: old module path + old function name
     const [pathResponse, nameResponse] = await Promise.all([
-      stringLiteralUses({ value: '@/lib/reports/generate-report' }, project, repoRoot),
+      stringLiteralUses(
+        { value: '@/lib/reports/generate-report' },
+        project,
+        repoRoot,
+      ),
       stringLiteralUses({ value: 'generateReport' }, project, repoRoot),
     ]);
 

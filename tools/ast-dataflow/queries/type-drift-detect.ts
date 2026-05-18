@@ -129,7 +129,9 @@ function extractFetcherUrl(node: Node): string | null {
 
   // Direct string literal: '/api/items'
   if (firstArg.getKind() === SyntaxKind.StringLiteral) {
-    return (firstArg as unknown as { getLiteralValue(): string }).getLiteralValue();
+    return (
+      firstArg as unknown as { getLiteralValue(): string }
+    ).getLiteralValue();
   }
 
   // Template literal: `/api/orders/${id}` — extract static prefix
@@ -142,7 +144,9 @@ function extractFetcherUrl(node: Node): string | null {
 
   // No-substitute template: `/api/items`
   if (firstArg.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral) {
-    return (firstArg as unknown as { getLiteralValue(): string }).getLiteralValue();
+    return (
+      firstArg as unknown as { getLiteralValue(): string }
+    ).getLiteralValue();
   }
 
   return null; // computed / identifier
@@ -177,9 +181,7 @@ function routePathMatches(
   const candParts = candidatePath.split('/');
   const routeParts = routeRelPath.split('/');
   if (candParts.length !== routeParts.length) return false;
-  return candParts.every(
-    (p, i) => p === '[*]' || p === routeParts[i],
-  );
+  return candParts.every((p, i) => p === '[*]' || p === routeParts[i]);
 }
 
 // ---------------------------------------------------------------------------
@@ -191,10 +193,7 @@ function routePathMatches(
 //   NextResponse<X>
 // at function return-type positions in app/api/**/route.ts files.
 // ---------------------------------------------------------------------------
-function isRouteReturnTypeAnnotation(
-  node: Node,
-  relPath: string,
-): boolean {
+function isRouteReturnTypeAnnotation(node: Node, relPath: string): boolean {
   // Must be in a route file
   if (!relPath.startsWith('app/api/') || !relPath.endsWith('route.ts')) {
     return false;
@@ -215,7 +214,9 @@ function isRouteReturnTypeAnnotation(
       kind === SyntaxKind.FunctionExpression
     ) {
       // Check it has a return type node that contains our typeRef
-      const returnType = (current as unknown as { getReturnTypeNode?(): Node | undefined }).getReturnTypeNode?.();
+      const returnType = (
+        current as unknown as { getReturnTypeNode?(): Node | undefined }
+      ).getReturnTypeNode?.();
       if (returnType) {
         const rtText = returnType.getText();
         // The return type annotation text contains the interface name
@@ -363,7 +364,8 @@ function enumerateFetcherGenericCandidates(
     for (const call of calls) {
       const expr = call.getExpression();
       const exprText = expr.getText();
-      if (exprText !== 'fetchJson' && exprText !== 'mutationFetchJson') continue;
+      if (exprText !== 'fetchJson' && exprText !== 'mutationFetchJson')
+        continue;
 
       const typeArgs = call.getTypeArguments();
       if (typeArgs.length === 0) continue;
@@ -395,9 +397,7 @@ export async function typeDriftDetect(
   args: TypeDriftDetectArgs,
   project: Project,
   repoRoot: string,
-): Promise<
-  QueryResponse<TypeDriftResult> & { newSinceBaseline?: string[] }
-> {
+): Promise<QueryResponse<TypeDriftResult> & { newSinceBaseline?: string[] }> {
   const started = Date.now();
   const limit = args.limit ?? DEFAULT_LIMIT;
 
@@ -454,8 +454,12 @@ export async function typeDriftDetect(
           fetchers: [],
           routes: [],
           candidateRoutes: [],
-          remediationHint: 'No fetcher calls found — lib/query/fetchers.ts is absent or contains no fetchJson/mutationFetchJson calls.',
-          error: { kind: 'no-fetchers-found' as const, confidence: 'exact' as const },
+          remediationHint:
+            'No fetcher calls found — lib/query/fetchers.ts is absent or contains no fetchJson/mutationFetchJson calls.',
+          error: {
+            kind: 'no-fetchers-found' as const,
+            confidence: 'exact' as const,
+          },
         },
       ],
       truncated: false,
@@ -584,10 +588,7 @@ export async function typeDriftDetect(
         }
 
         // Check if it's imported into a route file (candidate route)
-        if (
-          relPath.startsWith('app/api/') &&
-          relPath.endsWith('route.ts')
-        ) {
+        if (relPath.startsWith('app/api/') && relPath.endsWith('route.ts')) {
           // It's referenced in a route but not as a return-type annotation
           const importDecl = node.getFirstAncestorByKind(
             SyntaxKind.ImportDeclaration,
@@ -719,7 +720,9 @@ export async function typeDriftDetect(
         candidateRoutes: deduplicatedCandidateRoutes,
         remediationHint,
         ...(testOnly !== undefined ? { testOnly } : {}),
-        ...(allowlistedField !== undefined ? { allowlisted: allowlistedField } : {}),
+        ...(allowlistedField !== undefined
+          ? { allowlisted: allowlistedField }
+          : {}),
       });
     }
   }
@@ -797,9 +800,7 @@ function buildRemediationHint(
     const routeHint =
       candidateRoutes.length > 0
         ? `Add return type annotation to the handler at ${candidateRoutes[0].file}` +
-          (candidateRoutes[0].line > 0
-            ? `:${candidateRoutes[0].line}`
-            : '')
+          (candidateRoutes[0].line > 0 ? `:${candidateRoutes[0].line}` : '')
         : 'Annotate the matching route handler return type';
     return (
       `${routeHint}, e.g.: ` +
@@ -810,7 +811,7 @@ function buildRemediationHint(
 
   if (classification === 'route-only') {
     const url =
-      fetchers.length > 0 ? fetchers[0].url ?? '/api/...' : '/api/...';
+      fetchers.length > 0 ? (fetchers[0].url ?? '/api/...') : '/api/...';
     return (
       `Add a matching fetcher that uses the type as a generic: ` +
       `\`fetchJson<${interfaceName}>('${url}')\`. ` +

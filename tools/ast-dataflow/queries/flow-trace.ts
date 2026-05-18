@@ -1,21 +1,12 @@
 import { resolve } from 'node:path';
-import {
-  Project,
-  SyntaxKind,
-  type Node,
-  type SourceFile,
-} from 'ts-morph';
+import { Project, SyntaxKind, type Node, type SourceFile } from 'ts-morph';
 import type {
   QueryResponse,
   FlowTraceHopKind,
   FlowTraceRow,
   FlowTraceArgs,
 } from '../types';
-import {
-  buildErrorResponse,
-  findEnclosing,
-  toRepoRelative,
-} from '../resolve';
+import { buildErrorResponse, findEnclosing, toRepoRelative } from '../resolve';
 
 // ---------------------------------------------------------------------------
 // Types (WP3: promoted to types.ts — re-exported here for convenience)
@@ -42,9 +33,7 @@ type OriginResult =
   | { ok: true; node: Node; sf: SourceFile; symbol: string }
   | {
       ok: false;
-      code:
-        | typeof ORIGIN_NOT_RESOLVABLE
-        | typeof ORIGIN_NOT_VALUE_PRODUCING;
+      code: typeof ORIGIN_NOT_RESOLVABLE | typeof ORIGIN_NOT_VALUE_PRODUCING;
       message: string;
       hint: string;
     };
@@ -192,7 +181,9 @@ function findEnclosingScope(node: Node): Node {
  * identifier assignment).
  */
 function isDestructuringDeclaration(varDecl: Node): boolean {
-  const nameNode = (varDecl as import('ts-morph').VariableDeclaration).getNameNode();
+  const nameNode = (
+    varDecl as import('ts-morph').VariableDeclaration
+  ).getNameNode();
   const nameKind = nameNode.getKind();
   return (
     nameKind === SyntaxKind.ObjectBindingPattern ||
@@ -273,7 +264,9 @@ const FS_WRITE_METHODS: ReadonlySet<string> = new Set([
  * E.g. `fs.writeFile(...)` → 'writeFile'.
  * Returns null if the expression is not a simple member or identifier access.
  */
-function calleeMethodName(callExpr: import('ts-morph').CallExpression): string | null {
+function calleeMethodName(
+  callExpr: import('ts-morph').CallExpression,
+): string | null {
   const expr = callExpr.getExpression();
   if (expr.getKind() === SyntaxKind.PropertyAccessExpression) {
     return (expr as import('ts-morph').PropertyAccessExpression).getName();
@@ -292,7 +285,9 @@ function calleeMethodName(callExpr: import('ts-morph').CallExpression): string |
  * Pattern: `list.push(4)` — useNode is `list`, parent is PropAccess `list.push`,
  * grandparent is CallExpr `list.push(4)`, method is `push` ∈ MUTATION_METHODS.
  */
-function isMutationReceiver(useNode: Node): import('ts-morph').CallExpression | null {
+function isMutationReceiver(
+  useNode: Node,
+): import('ts-morph').CallExpression | null {
   const parent = useNode.getParent();
   if (!parent) return null;
   if (parent.getKind() !== SyntaxKind.PropertyAccessExpression) return null;
@@ -302,10 +297,12 @@ function isMutationReceiver(useNode: Node): import('ts-morph').CallExpression | 
   const methodName = propAccess.getName();
   if (!MUTATION_METHODS.has(methodName)) return null;
   const grandParent = propAccess.getParent();
-  if (!grandParent || grandParent.getKind() !== SyntaxKind.CallExpression) return null;
+  if (!grandParent || grandParent.getKind() !== SyntaxKind.CallExpression)
+    return null;
   // Confirm the property access is the callee of the call, not an argument.
   const callExpr = grandParent as import('ts-morph').CallExpression;
-  if (callExpr.getExpression().getStart() !== propAccess.getStart()) return null;
+  if (callExpr.getExpression().getStart() !== propAccess.getStart())
+    return null;
   return callExpr;
 }
 
@@ -316,7 +313,9 @@ function isMutationReceiver(useNode: Node): import('ts-morph').CallExpression | 
  * OQ-FT2: we check only the immediate method name; the value flowing into
  * it is confirmed by the caller checking that `useNode` is an argument.
  */
-function isSupabaseSinkCall(callExpr: import('ts-morph').CallExpression): boolean {
+function isSupabaseSinkCall(
+  callExpr: import('ts-morph').CallExpression,
+): boolean {
   const name = calleeMethodName(callExpr);
   return name !== null && SUPABASE_SINK_METHODS.has(name);
 }
@@ -387,7 +386,13 @@ function descendIntoCallee(
   // Check that the callee has a body (not just a signature).
   let hasBody = false;
   try {
-    hasBody = !!(calleeDecl as FunctionDeclaration | FunctionExpression | ArrowFunction | MethodDeclaration).getBody?.();
+    hasBody = !!(
+      calleeDecl as
+        | FunctionDeclaration
+        | FunctionExpression
+        | ArrowFunction
+        | MethodDeclaration
+    ).getBody?.();
   } catch {
     return;
   }
@@ -396,7 +401,14 @@ function descendIntoCallee(
   // Get the matching ParameterDeclaration by index.
   let paramDecl: Node | undefined;
   try {
-    const params = (calleeDecl as FunctionDeclaration | FunctionExpression | ArrowFunction | MethodDeclaration).getParameters?.() ?? [];
+    const params =
+      (
+        calleeDecl as
+          | FunctionDeclaration
+          | FunctionExpression
+          | ArrowFunction
+          | MethodDeclaration
+      ).getParameters?.() ?? [];
     paramDecl = params[argIndex];
   } catch {
     return;
@@ -407,7 +419,11 @@ function descendIntoCallee(
   const calleeSf = calleeDecl.getSourceFile();
   const calleeRelFile = toRepoRelative(state.repoRoot, calleeSf.getFilePath());
   const paramLineCol = calleeSf.getLineAndColumnAtPos(paramDecl.getStart());
-  const paramKey = visitedKey(calleeRelFile, paramLineCol.line, paramLineCol.column);
+  const paramKey = visitedKey(
+    calleeRelFile,
+    paramLineCol.line,
+    paramLineCol.column,
+  );
 
   if (state.visited.has(paramKey)) {
     // Cycle — emit cycleCutoff at the callee parameter's position.
@@ -437,7 +453,9 @@ function descendIntoCallee(
   // Determine confidence: 'exact' if the parameter is typed, 'indirect' if not.
   let paramTyped = false;
   try {
-    const paramType = (paramDecl as import('ts-morph').ParameterDeclaration).getTypeNode?.();
+    const paramType = (
+      paramDecl as import('ts-morph').ParameterDeclaration
+    ).getTypeNode?.();
     paramTyped = !!paramType;
   } catch {
     // leave as untyped
@@ -469,7 +487,9 @@ function descendIntoCallee(
   // Extract the parameter name to continue walking in the callee.
   let paramName: string | undefined;
   try {
-    paramName = (paramDecl as import('ts-morph').ParameterDeclaration).getName?.();
+    paramName = (
+      paramDecl as import('ts-morph').ParameterDeclaration
+    ).getName?.();
   } catch {
     // cannot resolve name
   }
@@ -477,7 +497,14 @@ function descendIntoCallee(
 
   // Continue walking from the callee's parameter (depth + 1).
   walkForward(paramDecl, paramName, calleeSf, depth + 1, paramHopNum, state);
-  walkDestructuring(paramDecl, paramName, calleeSf, depth + 1, paramHopNum, state);
+  walkDestructuring(
+    paramDecl,
+    paramName,
+    calleeSf,
+    depth + 1,
+    paramHopNum,
+    state,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +538,8 @@ function walkForward(
   if (depth >= state.maxDepth) {
     const relFile = toRepoRelative(state.repoRoot, sf.getFilePath());
     const declLineCol = sf.getLineAndColumnAtPos(declNode.getStart());
-    const cutoffKey = visitedKey(relFile, declLineCol.line, declLineCol.column) + ':cutoff';
+    const cutoffKey =
+      visitedKey(relFile, declLineCol.line, declLineCol.column) + ':cutoff';
 
     // Only emit one depthCutoff per branch end-point.
     if (!state.visited.has(cutoffKey)) {
@@ -653,7 +681,9 @@ function walkForward(
           if (decls.length > 0) {
             const declNode = decls[0];
             const declSf = declNode.getSourceFile();
-            const declLineCol = declSf.getLineAndColumnAtPos(declNode.getStart());
+            const declLineCol = declSf.getLineAndColumnAtPos(
+              declNode.getStart(),
+            );
             lhsDeclFile = toRepoRelative(state.repoRoot, declSf.getFilePath());
             lhsDeclLine = declLineCol.line;
             lhsDeclCol = declLineCol.column;
@@ -754,10 +784,12 @@ function walkForward(
     if (parentKind === SyntaxKind.ElementAccessExpression) {
       const elemAccess = parent as import('ts-morph').ElementAccessExpression;
       // useNode must be the receiver (expression), not the argument (key).
-      if (elemAccess.getExpression().getStart() !== useNode.getStart()) continue;
+      if (elemAccess.getExpression().getStart() !== useNode.getStart())
+        continue;
       // Check whether the argument is a string literal (exact) or dynamic (indirect).
       const argExpr = elemAccess.getArgumentExpression();
-      const isStaticKey = argExpr && argExpr.getKind() === SyntaxKind.StringLiteral;
+      const isStaticKey =
+        argExpr && argExpr.getKind() === SyntaxKind.StringLiteral;
       if (isStaticKey) {
         // Static key — this is a plain property read, not indirect.
         // Treat as an assignment if the parent context is a VarDecl; skip otherwise.
@@ -823,13 +855,19 @@ function walkForward(
 
       // Walk up to ObjectLiteralExpression.
       const objLiteral = parent.getParent();
-      if (!objLiteral || objLiteral.getKind() !== SyntaxKind.ObjectLiteralExpression) {
+      if (
+        !objLiteral ||
+        objLiteral.getKind() !== SyntaxKind.ObjectLiteralExpression
+      ) {
         continue;
       }
 
       // Walk up to CallExpression.
       const callExprParent = objLiteral.getParent();
-      if (!callExprParent || callExprParent.getKind() !== SyntaxKind.CallExpression) {
+      if (
+        !callExprParent ||
+        callExprParent.getKind() !== SyntaxKind.CallExpression
+      ) {
         continue;
       }
       const callExpr = callExprParent as import('ts-morph').CallExpression;
@@ -1072,7 +1110,8 @@ function walkDestructuring(
     if (useNode.getStart() <= declPos) continue;
 
     const parent = useNode.getParent();
-    if (!parent || parent.getKind() !== SyntaxKind.VariableDeclaration) continue;
+    if (!parent || parent.getKind() !== SyntaxKind.VariableDeclaration)
+      continue;
 
     const varDecl = parent as import('ts-morph').VariableDeclaration;
     const init = varDecl.getInitializer();
@@ -1182,7 +1221,11 @@ export async function flowTrace(
   };
 
   // --- Emit origin row (hop 1 — always 'assignment' kind per spec §Output shape) ---
-  const originKey = visitedKey(relFile, originLineCol.line, originLineCol.column);
+  const originKey = visitedKey(
+    relFile,
+    originLineCol.line,
+    originLineCol.column,
+  );
   state.visited.add(originKey);
   state.totalEstimated++;
   const originHopNum = ++state.hopCounter;
