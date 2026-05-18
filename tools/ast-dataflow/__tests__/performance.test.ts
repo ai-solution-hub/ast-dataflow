@@ -96,7 +96,7 @@ describe('flow-trace performance — 8-hop warm time', () => {
 
     expect(response.error).toBeUndefined();
     // Trace: a(origin) + b,c,d,e,f,g,h (7 assignments) + depthCutoff = 9 hops.
-    // The `return h` would be hop 10 but maxDepth:8 fires depthCutoff at depth 8.
+    // h is hop 8; depthCutoff fires before the next hop would be emitted.
     expect(response.results).toHaveLength(9);
     expect(response.results).toEqual(
       expect.arrayContaining([
