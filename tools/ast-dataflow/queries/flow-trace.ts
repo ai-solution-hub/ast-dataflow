@@ -791,6 +791,132 @@ function walkForward(
     }
 
     // -------------------------------------------------------------------
+    // Nested object-literal argument hop (Wave 5 bidIds fix):
+    // value passed as a property inside an object literal argument.
+    //
+    // Two patterns handled:
+    //   PropertyAssignment:         rpc('fn', { p_project_ids: bidIds })
+    //   ShorthandPropertyAssignment: rpc('fn', { bidIds })
+    //
+    // Chain to detect:
+    //   Identifier → PropertyAssignment/ShorthandPropertyAssignment
+    //              → ObjectLiteralExpression → CallExpression
+    //
+    // When matched, the hop is classified as 'argument' at the surrounding
+    // CallExpression — consistent with the direct-argument case below.
+    // Confidence is 'exact' (static property key, statically-known call).
+    // -------------------------------------------------------------------
+    if (
+      parentKind === SyntaxKind.PropertyAssignment ||
+      parentKind === SyntaxKind.ShorthandPropertyAssignment
+    ) {
+      // For PropertyAssignment, the identifier must be the initialiser (RHS),
+      // not the property name (LHS). For ShorthandPropertyAssignment the
+      // identifier IS the value — no further check needed.
+      if (parentKind === SyntaxKind.PropertyAssignment) {
+        const propAssign = parent as import('ts-morph').PropertyAssignment;
+        const initialiser = propAssign.getInitializer();
+        if (!initialiser || initialiser.getStart() !== useNode.getStart()) {
+          continue;
+        }
+      }
+
+      // Walk up to ObjectLiteralExpression.
+      const objLiteral = parent.getParent();
+      if (!objLiteral || objLiteral.getKind() !== SyntaxKind.ObjectLiteralExpression) {
+        continue;
+      }
+
+      // Walk up to CallExpression.
+      const callExprParent = objLiteral.getParent();
+      if (!callExprParent || callExprParent.getKind() !== SyntaxKind.CallExpression) {
+        continue;
+      }
+      const callExpr = callExprParent as import('ts-morph').CallExpression;
+
+      // Confirm the object literal is a direct argument of the call
+      // (not e.g. the callee expression or a nested sub-expression).
+      const callArgs = callExpr.getArguments();
+      if (!callArgs.some((a) => a.getStart() === objLiteral.getStart())) {
+        continue;
+      }
+
+      const callLineCol = sf.getLineAndColumnAtPos(callExpr.getStart());
+      const key = visitedKey(relFile, callLineCol.line, callLineCol.column);
+      if (state.visited.has(key)) continue;
+
+      // --- apiCall sink ---
+      if (isSupabaseSinkCall(callExpr)) {
+        state.totalEstimated++;
+        const hopNum = ++state.hopCounter;
+        state.visited.add(key);
+
+        if (state.rows.length < state.limit) {
+          state.rows.push({
+            hop: hopNum,
+            parentHop: parentHopNumber,
+            kind: 'apiCall',
+            file: relFile,
+            line: callLineCol.line,
+            column: callLineCol.column,
+            confidence: 'exact',
+            enclosing: findEnclosing(callExpr),
+            origin: state.origin,
+          });
+        }
+        continue;
+      }
+
+      // --- write sink ---
+      if (isFsWriteCall(callExpr)) {
+        state.totalEstimated++;
+        const hopNum = ++state.hopCounter;
+        state.visited.add(key);
+
+        if (state.rows.length < state.limit) {
+          state.rows.push({
+            hop: hopNum,
+            parentHop: parentHopNumber,
+            kind: 'write',
+            file: relFile,
+            line: callLineCol.line,
+            column: callLineCol.column,
+            confidence: 'exact',
+            enclosing: findEnclosing(callExpr),
+            origin: state.origin,
+          });
+        }
+        continue;
+      }
+
+      // --- generic argument hop ---
+      state.totalEstimated++;
+      const hopNum = ++state.hopCounter;
+      state.visited.add(key);
+
+      if (state.rows.length < state.limit) {
+        state.rows.push({
+          hop: hopNum,
+          parentHop: parentHopNumber,
+          kind: 'argument',
+          file: relFile,
+          line: callLineCol.line,
+          column: callLineCol.column,
+          confidence: 'exact',
+          enclosing: findEnclosing(callExpr),
+          origin: state.origin,
+        });
+      }
+
+      // Inter-function descent: use the object literal as the "useNode" proxy
+      // so descendIntoCallee can locate the argument index correctly.
+      if (state.interFunction) {
+        descendIntoCallee(callExpr, objLiteral, hopNum, depth, state);
+      }
+      continue;
+    }
+
+    // -------------------------------------------------------------------
     // Argument hop: doSomething(value)
     // The identifier is a direct call argument.
     // WP2 checks for apiCall / write sinks BEFORE emitting a generic argument hop.

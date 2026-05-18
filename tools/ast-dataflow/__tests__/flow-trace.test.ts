@@ -4,6 +4,7 @@ import { createProject } from '@/lib/ast-dataflow';
 import { flowTrace } from '@/lib/ast-dataflow/queries/flow-trace';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '14-flow-trace');
+const NESTED_ARG_FIXTURE_DIR = resolve(__dirname, 'fixtures', '17b-nested-arg');
 
 function makeProject() {
   return createProject({
@@ -637,6 +638,136 @@ describe('flow-trace — indirect tier (dynamic property access)', () => {
           kind: 'assignment',
           confidence: 'indirect',
           file: '10-indirect.ts',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Wave 5 Tests — bidIds nested-arg fix
+// ---------------------------------------------------------------------------
+
+function makeNestedArgProject() {
+  return createProject({
+    tsConfigFilePath: resolve(NESTED_ARG_FIXTURE_DIR, 'tsconfig.json'),
+    repoRoot: NESTED_ARG_FIXTURE_DIR,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Test 17b-1: Nested object-literal property (PropertyAssignment)
+// Fixture: 01-nested-property-arg.ts
+// Pattern: rpc('fn', { p_project_ids: bidIds })
+// Origin: const bidIds at line 14, col 9
+// Expected: 2 hops — origin (assignment) + argument hop at the rpc() call site
+// Hop kind: 'argument' (value flows as a call argument via object literal property)
+// Confidence: 'exact' (static key, statically-known call)
+// ---------------------------------------------------------------------------
+describe('flow-trace — nested object-literal property argument (PropertyAssignment)', () => {
+  it('emits origin row + argument hop when value flows via { key: value } into a call', async () => {
+    const { project, repoRoot } = makeNestedArgProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '01-nested-property-arg.ts',
+        originLine: 14,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // Exactly 2 hops: origin + the argument hop at the rpc() call site
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (bidIds declaration)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '01-nested-property-arg.ts',
+          line: 14,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'bidIds' }),
+        }),
+      ]),
+    );
+
+    // hop 2: rpc('get_bid_question_stats_batch', { p_project_ids: bidIds }) call
+    // The walker must detect the PropertyAssignment → ObjectLiteralExpression →
+    // CallExpression chain and classify the hop as 'argument'.
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'argument',
+          file: '01-nested-property-arg.ts',
+          line: 15,
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 17b-2: Shorthand property argument (ShorthandPropertyAssignment)
+// Fixture: 02-shorthand-property-arg.ts
+// Pattern: rpc('fn', { bidIds }) — shorthand for { bidIds: bidIds }
+// Origin: const bidIds at line 14, col 9
+// Expected: 2 hops — origin (assignment) + argument hop at the rpc() call site
+// Hop kind: 'argument', Confidence: 'exact'
+// ---------------------------------------------------------------------------
+describe('flow-trace — shorthand property argument (ShorthandPropertyAssignment)', () => {
+  it('emits origin row + argument hop when value flows via { name } shorthand into a call', async () => {
+    const { project, repoRoot } = makeNestedArgProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '02-shorthand-property-arg.ts',
+        originLine: 14,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // Exactly 2 hops: origin + the argument hop at the rpc() call site
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (bidIds declaration)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '02-shorthand-property-arg.ts',
+          line: 14,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'bidIds' }),
+        }),
+      ]),
+    );
+
+    // hop 2: rpc('get_bid_question_stats_batch', { bidIds }) call
+    // The walker must detect the ShorthandPropertyAssignment → ObjectLiteralExpression →
+    // CallExpression chain and classify the hop as 'argument'.
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'argument',
+          file: '02-shorthand-property-arg.ts',
+          line: 15,
+          confidence: 'exact',
           parentHop: 1,
         }),
       ]),
