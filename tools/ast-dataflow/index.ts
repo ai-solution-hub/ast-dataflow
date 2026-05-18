@@ -85,3 +85,10 @@ export type {
   FlowTraceHopKind,
   FlowTraceRow,
 } from './types';
+
+// --- type-drift-detect ---
+export { typeDriftDetect } from './queries/type-drift-detect';
+export type {
+  TypeDriftDetectArgs,
+  TypeDriftResult,
+} from './types';

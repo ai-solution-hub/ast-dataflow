@@ -517,3 +517,79 @@ export interface FlowTraceRow extends BaseResult {
     symbol: string;
   };
 }
+
+// ──────────────────────────────────────────────────────────────────────────────
+// type-drift-detect query (PRODUCT.md WP-D, R-WP17)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Arguments for the type-drift-detect query.
+ *
+ * - scope            — comma-separated glob patterns. Only files matching the
+ *                      globs are inspected for fetcher/route call sites; the
+ *                      interface declarations in types/ are always scanned.
+ *                      When omitted, the default scope applies.
+ * - limit            — max result rows; default 500.
+ * - interfacePattern — additive regex; names matching this are treated as
+ *                      response-interface candidates in addition to the
+ *                      default name patterns.
+ * - ci               — CI mode: diff against baseline, exit non-zero on new
+ *                      fetcher-only rows.
+ * - updateBaseline   — write back new fetcher-only rows to the baseline file
+ *                      (never combined with --ci).
+ * - json             — JSONL output (one row per line). Implied by --ci.
+ * - pretty           — human-readable Markdown output (default when no other
+ *                      output flag is set).
+ */
+export interface TypeDriftDetectArgs {
+  scope?: string;
+  limit?: number;
+  interfacePattern?: string;
+  ci?: boolean;
+  updateBaseline?: boolean;
+  json?: boolean;
+  pretty?: boolean;
+}
+
+/**
+ * One result row for the type-drift-detect query (PRODUCT.md WP-D D-11).
+ *
+ * Extends BaseResult — `file`, `line`, `column`, `confidence` are inherited
+ * from the `declaredAt` position.
+ */
+export interface TypeDriftResult extends BaseResult {
+  /** The interface or type-alias name. */
+  interface: string;
+  /** Primary declaration location (repo-root-relative POSIX path). */
+  declaredAt: { file: string; line: number; column: number };
+  /** Classification bucket. */
+  classification: 'enforced' | 'fetcher-only' | 'route-only' | 'unused';
+  /** Fetcher call sites that use this interface as a generic. */
+  fetchers: Array<{
+    file: string;
+    line: number;
+    column: number;
+    url: string | null;
+  }>;
+  /** Route handler sites that declare this interface as a return type. */
+  routes: Array<{
+    file: string;
+    line: number;
+    column: number;
+    confidence: Confidence;
+  }>;
+  /** Routes that import the interface but do not annotate with it. */
+  candidateRoutes: Array<{
+    file: string;
+    line: number;
+    column: number;
+    matchReason: 'imported-not-annotated' | 'url-match' | 'naming-convention';
+    confidence: Confidence;
+  }>;
+  /** Minimal change that would flip this row to enforced. */
+  remediationHint: string;
+  /** True when the interface is referenced only in __tests__/**. */
+  testOnly?: boolean;
+  /** Populated when the interface is in the allowlist. */
+  allowlisted?: { reason: string };
+}
