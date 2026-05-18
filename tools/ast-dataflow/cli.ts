@@ -13,8 +13,8 @@ import {
   stringLiteralUses,
   typeEvolution,
   createProject,
-} from '@/lib/ast-dataflow';
-import type { ReferenceKind } from '@/lib/ast-dataflow';
+} from '../lib/ast-dataflow';
+import type { ReferenceKind } from '../lib/ast-dataflow';
 
 interface ParsedArgs {
   query: string | undefined;

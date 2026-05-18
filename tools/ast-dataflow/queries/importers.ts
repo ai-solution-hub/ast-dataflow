@@ -11,6 +11,62 @@ import { buildErrorResponse } from '../resolve';
 const DEFAULT_LIMIT = 200;
 
 /**
+ * Extract the set of alias prefixes declared in the project's tsconfig
+ * `compilerOptions.paths`.
+ *
+ * Each paths entry has the form `"alias/*": ["./target/*"]`. We collect the
+ * leading segment before the first `/` (e.g. `@`, `~`, `#`) so the suffix
+ * matcher can strip any of them. Falls back to `['@']` (the KH convention)
+ * when no paths are declared.
+ *
+ * We intentionally limit to single-character-prefix aliases (beginning with
+ * a non-alphanumeric character) to avoid accidentally stripping genuine
+ * directory names like `api/` or `src/`.
+ */
+function extractAliasPrefixes(project: Project): string[] {
+  const opts = project.getCompilerOptions();
+  const paths = opts.paths;
+  if (!paths || Object.keys(paths).length === 0) {
+    // No tsconfig paths declared — fall back to KH's @/ convention.
+    return ['@/'];
+  }
+
+  const prefixes = new Set<string>();
+  for (const pattern of Object.keys(paths)) {
+    // pattern is e.g. "@/*", "~/*", "#app/*"
+    // Extract the portion up to and including the first slash.
+    const slashIndex = pattern.indexOf('/');
+    if (slashIndex <= 0) continue;
+    const prefix = pattern.slice(0, slashIndex + 1); // e.g. "@/", "~/", "#app/"
+    // Only include prefixes that start with a non-alphanumeric character
+    // (avoids treating "src/" or "lib/" as aliases).
+    if (/^[^a-zA-Z0-9]/.test(prefix)) {
+      prefixes.add(prefix);
+    }
+  }
+  return prefixes.size > 0 ? Array.from(prefixes) : ['@/'];
+}
+
+/**
+ * Strip any recognised path-alias prefix from a module specifier so that
+ * suffix matching against the resolved absolute path works regardless of
+ * which alias convention the project uses.
+ *
+ * Examples (with KH aliases `@/` and a Vite project alias `~/`):
+ *   '@/lib/ai/digest'   → 'lib/ai/digest'
+ *   '~/utils/format'    → 'utils/format'
+ *   'src/utils/format'  → 'src/utils/format'  (no prefix to strip)
+ */
+function stripAliasPrefix(specifier: string, aliasPrefixes: string[]): string {
+  for (const prefix of aliasPrefixes) {
+    if (specifier.startsWith(prefix)) {
+      return specifier.slice(prefix.length);
+    }
+  }
+  return specifier;
+}
+
+/**
  * Resolve a module path string to an absolute file path using the project's
  * module resolver.
  *
@@ -20,6 +76,10 @@ const DEFAULT_LIMIT = 200;
  * form of the input), is our target. This way both '@/lib/ai/digest' and
  * '../../lib/ai/digest' resolve to the same SourceFile without re-implementing
  * the compiler's module resolver.
+ *
+ * The alias strip uses the tsconfig `compilerOptions.paths` to discover which
+ * alias prefixes are active (e.g. `@/` for KH, `~/` for Vite projects).
+ * Falls back to stripping `@/` when no paths are declared.
  *
  * If no import in the corpus resolves to the input string, we fall back to
  * treating the modulePath as a repo-relative file path and looking it up
@@ -33,6 +93,9 @@ function resolveTargetFilePath(
   // Normalise the input: strip trailing '.ts' for comparison purposes.
   const normalised = modulePath.replace(/\.ts$/, '');
 
+  const aliasPrefixes = extractAliasPrefixes(project);
+  const strippedNormalised = stripAliasPrefix(normalised, aliasPrefixes);
+
   for (const sf of project.getSourceFiles()) {
     for (const importDecl of sf.getImportDeclarations()) {
       const specifier = importDecl.getModuleSpecifierValue();
@@ -45,7 +108,7 @@ function resolveTargetFilePath(
       if (!resolved) continue;
 
       const resolvedPath = resolved.getFilePath();
-      const resolvedNormalised = resolvedPath.replace(/\.ts$/, '');
+      const resolvedNormalised = resolvedPath.replace(/\.ts$/, '').replace(/\.tsx$/, '');
 
       // Match on the raw specifier string.
       if (
@@ -56,8 +119,9 @@ function resolveTargetFilePath(
         return resolvedPath;
       }
 
-      // Match on the tail of the resolved absolute path against the input.
-      if (resolvedNormalised.endsWith('/' + normalised.replace(/^@\//, ''))) {
+      // Match on the tail of the resolved absolute path against the input,
+      // stripping any declared alias prefix (supports @/, ~/, #app/, etc.).
+      if (resolvedNormalised.endsWith('/' + strippedNormalised)) {
         return resolvedPath;
       }
     }

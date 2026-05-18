@@ -11,7 +11,7 @@ import type {
   ColumnReadMethod,
   QueryResponse,
 } from '../types';
-import { buildErrorResponse, toRepoRelative } from '../resolve';
+import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -268,17 +268,6 @@ function findRpcCalls(sf: SourceFile, column: string): CallExpression[] {
   return results;
 }
 
-function isTestFile(filePath: string): boolean {
-  return (
-    filePath.startsWith('__tests__/') ||
-    filePath.includes('/test/') ||
-    filePath.endsWith('.test.ts') ||
-    filePath.endsWith('.test.tsx') ||
-    filePath.endsWith('.spec.ts') ||
-    filePath.endsWith('.spec.tsx')
-  );
-}
-
 export async function columnReads(
   args: ColumnReadsArgs,
   project: Project,
@@ -318,7 +307,7 @@ export async function columnReads(
     for (const sf of project.getSourceFiles()) {
       const relPath = toRepoRelative(repoRoot, sf.getFilePath());
 
-      if (excludeTests && isTestFile(relPath)) continue;
+      if (excludeTests && isTestFilePath(relPath)) continue;
 
       // ── .from('table').<chain> hits ──────────────────────────────────────
       const fromCalls = findFromCalls(sf, args.table);

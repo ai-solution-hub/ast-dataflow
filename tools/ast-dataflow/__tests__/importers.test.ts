@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { createProject, importers } from '@/lib/ast-dataflow';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '05-importers');
+const VITE_FIXTURE_DIR = resolve(__dirname, 'fixtures', '15-vite');
 
 describe('importers query — fixture', () => {
   it('returns 7 rows for target.ts (one per importing file)', async () => {
@@ -169,5 +170,103 @@ describe('importers query — fixture', () => {
     for (const row of response.results) {
       expect(row.confidence).toBe('exact');
     }
+  });
+});
+
+describe('importers query — Vite fixture (non-@/ path alias)', () => {
+  /**
+   * Fixture 15-vite uses "~/*" → "./src/*" as its tsconfig path alias.
+   * DateDisplay.tsx imports via ~/utils/format (alias path).
+   * PriceTag.tsx imports via ../utils/format (relative path).
+   * The importers query must resolve both correctly.
+   */
+
+  it('finds alias importer (~/utils/format) when querying src/utils/format.ts', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(VITE_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: VITE_FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'src/utils/format.ts' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('importers');
+    expect(response.error).toBeUndefined();
+
+    const files = response.results.map((r) => r.file).sort();
+    // Both DateDisplay (alias import) and PriceTag (relative import) should appear
+    expect(files).toContain('src/components/DateDisplay.tsx');
+    expect(files).toContain('src/components/PriceTag.tsx');
+    // 3 files: DateDisplay (alias), PriceTag (relative), AliasSuffixCallerOnly (relative)
+    expect(files).toHaveLength(3);
+  });
+
+  it('resolves alias importer with exact confidence', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(VITE_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: VITE_FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'src/utils/format.ts' },
+      project,
+      repoRoot,
+    );
+
+    for (const row of response.results) {
+      expect(row.confidence).toBe('exact');
+    }
+  });
+
+  it('finds the correct named imports from the alias importer', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(VITE_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: VITE_FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'src/utils/format.ts' },
+      project,
+      repoRoot,
+    );
+
+    const byFile = Object.fromEntries(response.results.map((r) => [r.file, r]));
+
+    // DateDisplay imports both formatDate and formatCurrency
+    expect(byFile['src/components/DateDisplay.tsx']?.namedImports).toEqual(
+      expect.arrayContaining(['formatDate', 'formatCurrency']),
+    );
+
+    // PriceTag imports only formatCurrency
+    expect(byFile['src/components/PriceTag.tsx']?.namedImports).toEqual([
+      'formatCurrency',
+    ]);
+  });
+
+  it('resolves alias-prefixed modulePath (~/utils/format) to find importers', async () => {
+    /**
+     * This test exercises the alias-strip branch in resolveTargetFilePath.
+     * The user passes the alias form ~/utils/format as the modulePath.
+     * The query must strip the ~/ prefix (not just @/) to locate the file.
+     */
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(VITE_FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: VITE_FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: '~/utils/format' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('importers');
+    expect(response.error).toBeUndefined();
+    // DateDisplay.tsx uses ~/utils/format alias import — must be found
+    const files = response.results.map((r) => r.file);
+    expect(files).toContain('src/components/DateDisplay.tsx');
   });
 });

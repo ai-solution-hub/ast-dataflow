@@ -11,7 +11,7 @@ import type {
   ColumnWriteMethod,
   QueryResponse,
 } from '../types';
-import { buildErrorResponse, toRepoRelative } from '../resolve';
+import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -271,24 +271,6 @@ function collectChain(
 }
 
 /**
- * Heuristic to identify test-adjacent files that should be suppressed
- * when `excludeTests` is true.
- *
- * NOTE: This heuristic is duplicated from `column-reads.ts` per WP2 brief.
- * Extraction into `resolve.ts` is deferred to WP4 (backlog item AST-S3-O1).
- */
-function isTestFile(filePath: string): boolean {
-  return (
-    filePath.startsWith('__tests__/') ||
-    filePath.includes('/test/') ||
-    filePath.endsWith('.test.ts') ||
-    filePath.endsWith('.test.tsx') ||
-    filePath.endsWith('.spec.ts') ||
-    filePath.endsWith('.spec.tsx')
-  );
-}
-
-/**
  * Inspect an object-literal or identifier argument to a write method and
  * determine whether it contains the target column.
  *
@@ -394,7 +376,7 @@ export async function columnWrites(
     for (const sf of project.getSourceFiles()) {
       const relPath = toRepoRelative(repoRoot, sf.getFilePath());
 
-      if (excludeTests && isTestFile(relPath)) continue;
+      if (excludeTests && isTestFilePath(relPath)) continue;
 
       const fromCalls = findFromCalls(sf, args.table);
 

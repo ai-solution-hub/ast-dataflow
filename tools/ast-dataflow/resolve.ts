@@ -285,14 +285,32 @@ export interface BarrelWalkResult {
   testOnlyImporters: number;
 }
 
+/**
+ * Canonical test-file path detector.
+ *
+ * Covers the two most common test directory conventions:
+ *   - __tests__/      KH convention (tests at repo root)
+ *   - src/__tests__/  Vite / create-vite scaffold convention
+ *
+ * Also catches /test/ directory segments and the universal .test.ts /
+ * .spec.ts suffix patterns that Vitest and Jest both use.
+ *
+ * Single source of truth — column-reads.ts and column-writes.ts import from
+ * here rather than maintaining their own copies.
+ */
+const TEST_DIR_PREFIXES = ['__tests__/', 'src/__tests__/'];
+const TEST_SUFFIX_PATTERNS = [
+  '.test.ts',
+  '.test.tsx',
+  '.spec.ts',
+  '.spec.tsx',
+] as const;
+
 export function isTestFilePath(relPath: string): boolean {
   return (
-    relPath.startsWith('__tests__/') ||
+    TEST_DIR_PREFIXES.some((p) => relPath.startsWith(p)) ||
     relPath.includes('/test/') ||
-    relPath.endsWith('.test.ts') ||
-    relPath.endsWith('.test.tsx') ||
-    relPath.endsWith('.spec.ts') ||
-    relPath.endsWith('.spec.tsx')
+    TEST_SUFFIX_PATTERNS.some((s) => relPath.endsWith(s))
   );
 }
 
