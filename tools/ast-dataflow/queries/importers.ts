@@ -108,7 +108,7 @@ function resolveTargetFilePath(
       if (!resolved) continue;
 
       const resolvedPath = resolved.getFilePath();
-      const resolvedNormalised = resolvedPath.replace(/\.ts$/, '').replace(/\.tsx$/, '');
+      const resolvedNormalised = resolvedPath.replace(/\.tsx?$/, '');
 
       // Match on the raw specifier string.
       if (

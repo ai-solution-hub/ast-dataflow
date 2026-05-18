@@ -128,25 +128,22 @@ describe('rename-sweep Q1 — string-literal-uses: old function name as string a
 // Q2 — importers: old module path has no importers after rename
 // ---------------------------------------------------------------------------
 describe('rename-sweep Q2 — importers: no file imports the old module path', () => {
-  it('finds zero importers for the old module path post-rename', async () => {
+  it('returns zero importers for the old module path post-rename', async () => {
     const { project, repoRoot } = makeProject();
-    // The old module path no longer exists in the fixture — importers returns empty
+    // The old module path no longer exists in the fixture — importers returns an empty
+    // result set with no error (the resolver treats missing modules as "no importers
+    // found" rather than surfacing unknown_file, because no candidate matches).
     const response = await importers(
       { modulePath: 'pre-rename-source.ts' },
       project,
       repoRoot,
     );
 
-    // pre-rename-source.ts is not in the fixture — expect unknown_file or 0 results
-    // Either: error.kind === 'unknown_file' OR results is empty
-    if (response.error) {
-      expect(response.error.kind).toBe('unknown_file');
-    } else {
-      expect(response.results).toHaveLength(0);
-    }
+    expect(response.error).toBeUndefined();
+    expect(response.results).toHaveLength(0);
   });
 
-  it('finds exactly one importer for the new module path — consumer-renamed.ts', async () => {
+  it('finds exactly two importers for the new module path', async () => {
     const { project, repoRoot } = makeProject();
     const response = await importers(
       { modulePath: 'post-rename-source.ts' },
@@ -155,10 +152,10 @@ describe('rename-sweep Q2 — importers: no file imports the old module path', (
     );
 
     expect(response.error).toBeUndefined();
-    // consumer-renamed.ts and test-with-missed-string.ts both import post-rename-source.ts
+    // consumer-renamed.ts and test-with-missed-string.ts both import post-rename-source.ts.
     const files = response.results.map((r) => r.file).sort();
-    expect(files).toContain('consumer-renamed.ts');
-    expect(files).toContain('test-with-missed-string.ts');
+    expect(files).toHaveLength(2);
+    expect(files).toEqual(['consumer-renamed.ts', 'test-with-missed-string.ts']);
   });
 });
 
@@ -177,8 +174,13 @@ describe('rename-sweep Q3 — references: generateChangeReport is referenced; ge
     expect(response.query).toBe('references');
     expect(response.error).toBeUndefined();
 
-    // At least consumer-renamed.ts and test-with-missed-string.ts reference the new symbol
+    // Three fixture files contain references to the new symbol: the declaration
+    // site (post-rename-source.ts) plus the two importing files. Importers each
+    // reference the symbol twice; the declaration once → 5 total rows, 3 unique files.
     const referenceFiles = new Set(response.results.map((r) => r.file));
+    expect(response.results).toHaveLength(5);
+    expect(referenceFiles.size).toBe(3);
+    expect(referenceFiles).toContain('post-rename-source.ts');
     expect(referenceFiles).toContain('consumer-renamed.ts');
     expect(referenceFiles).toContain('test-with-missed-string.ts');
   });
