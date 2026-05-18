@@ -42,7 +42,9 @@ describe("string-literal-uses — fixture 1: vi.mock('@/lib/foo') argument", () 
     expect(response.query).toBe('string-literal-uses');
     expect(response.error).toBeUndefined();
 
-    const rows = response.results.filter((r) => r.file === 'fixture-vi-mock.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-vi-mock.ts',
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       file: 'fixture-vi-mock.ts',
@@ -60,7 +62,9 @@ describe("string-literal-uses — fixture 1: vi.mock('@/lib/foo') argument", () 
     );
 
     // Exactly one result from the vi-mock fixture file — '@/lib/other' is excluded
-    const rows = response.results.filter((r) => r.file === 'fixture-vi-mock.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-vi-mock.ts',
+    );
     expect(rows).toHaveLength(1);
     // The single row is for '@/lib/foo', not '@/lib/other'
     expect(rows[0]).toMatchObject({ kind: 'viMock', confidence: 'exact' });
@@ -70,7 +74,7 @@ describe("string-literal-uses — fixture 1: vi.mock('@/lib/foo') argument", () 
 // ---------------------------------------------------------------------------
 // Fixture 2: JSX prop value — kind 'jsxProp'
 // ---------------------------------------------------------------------------
-describe("string-literal-uses — fixture 2: JSX href prop value", () => {
+describe('string-literal-uses — fixture 2: JSX href prop value', () => {
   it("returns exactly one jsxProp row for 'https://example.com/page' in the JSX fixture", async () => {
     const { project, repoRoot } = makeProject();
     const response = await stringLiteralUses(
@@ -82,7 +86,9 @@ describe("string-literal-uses — fixture 2: JSX href prop value", () => {
     expect(response.query).toBe('string-literal-uses');
     expect(response.error).toBeUndefined();
 
-    const rows = response.results.filter((r) => r.file === 'fixture-jsx-prop.tsx');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-jsx-prop.tsx',
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       file: 'fixture-jsx-prop.tsx',
@@ -99,7 +105,9 @@ describe("string-literal-uses — fixture 2: JSX href prop value", () => {
       repoRoot,
     );
 
-    const rows = response.results.filter((r) => r.file === 'fixture-jsx-prop.tsx');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-jsx-prop.tsx',
+    );
     // Only the matching href, not the non-matching one
     expect(rows).toHaveLength(1);
   });
@@ -108,7 +116,7 @@ describe("string-literal-uses — fixture 2: JSX href prop value", () => {
 // ---------------------------------------------------------------------------
 // Fixture 3: sql tagged template — kind 'sqlTag'
 // ---------------------------------------------------------------------------
-describe("string-literal-uses — fixture 3: sql`` tagged template content", () => {
+describe('string-literal-uses — fixture 3: sql`` tagged template content', () => {
   it("returns exactly one sqlTag row for 'SELECT * FROM projects' in the sql fixture", async () => {
     const { project, repoRoot } = makeProject();
     const response = await stringLiteralUses(
@@ -120,7 +128,9 @@ describe("string-literal-uses — fixture 3: sql`` tagged template content", () 
     expect(response.query).toBe('string-literal-uses');
     expect(response.error).toBeUndefined();
 
-    const rows = response.results.filter((r) => r.file === 'fixture-sql-tag.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-sql-tag.ts',
+    );
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({
       file: 'fixture-sql-tag.ts',
@@ -137,7 +147,9 @@ describe("string-literal-uses — fixture 3: sql`` tagged template content", () 
       repoRoot,
     );
 
-    const rows = response.results.filter((r) => r.file === 'fixture-sql-tag.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-sql-tag.ts',
+    );
     expect(rows).toHaveLength(1);
   });
 });
@@ -157,7 +169,9 @@ describe("string-literal-uses — fixture 4: process.env['MY_API_KEY'] bracket a
     expect(response.query).toBe('string-literal-uses');
     expect(response.error).toBeUndefined();
 
-    const rows = response.results.filter((r) => r.file === 'fixture-env-key.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-env-key.ts',
+    );
     // Two rows: one envKey (bracket access) and one argument (useKey call)
     expect(rows).toHaveLength(2);
     expect(rows).toEqual(
@@ -176,11 +190,11 @@ describe("string-literal-uses — fixture 4: process.env['MY_API_KEY'] bracket a
       repoRoot,
     );
 
-    const rows = response.results.filter((r) => r.file === 'fixture-env-key.ts');
-    // Neither row should be the OTHER_KEY access
-    const otherKeyRows = rows.filter(
-      (r) => r.kind === 'envKey',
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-env-key.ts',
     );
+    // Neither row should be the OTHER_KEY access
+    const otherKeyRows = rows.filter((r) => r.kind === 'envKey');
     // Only one envKey row (the MY_API_KEY one, not OTHER_KEY)
     expect(otherKeyRows).toHaveLength(1);
   });
@@ -189,7 +203,7 @@ describe("string-literal-uses — fixture 4: process.env['MY_API_KEY'] bracket a
 // ---------------------------------------------------------------------------
 // Fixture 5: plain argument literal — kind 'argument'
 // ---------------------------------------------------------------------------
-describe("string-literal-uses — fixture 5: plain call-expression argument literal", () => {
+describe('string-literal-uses — fixture 5: plain call-expression argument literal', () => {
   it("returns two argument rows for 'project_id' in the argument fixture", async () => {
     const { project, repoRoot } = makeProject();
     const response = await stringLiteralUses(
@@ -201,7 +215,9 @@ describe("string-literal-uses — fixture 5: plain call-expression argument lite
     expect(response.query).toBe('string-literal-uses');
     expect(response.error).toBeUndefined();
 
-    const rows = response.results.filter((r) => r.file === 'fixture-argument.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-argument.ts',
+    );
     // query('project_id') and filter('project_id', 'value') — two sites
     expect(rows).toHaveLength(2);
     expect(rows).toEqual(
@@ -220,7 +236,9 @@ describe("string-literal-uses — fixture 5: plain call-expression argument lite
       repoRoot,
     );
 
-    const rows = response.results.filter((r) => r.file === 'fixture-argument.ts');
+    const rows = response.results.filter(
+      (r) => r.file === 'fixture-argument.ts',
+    );
     // Exactly 2 — not 3 (the 'other_column' literal is excluded)
     expect(rows).toHaveLength(2);
   });
@@ -232,11 +250,7 @@ describe("string-literal-uses — fixture 5: plain call-expression argument lite
 describe('string-literal-uses — error contract: missing value argument', () => {
   it('returns a parse_error structured response when value is empty string', async () => {
     const { project, repoRoot } = makeProject();
-    const response = await stringLiteralUses(
-      { value: '' },
-      project,
-      repoRoot,
-    );
+    const response = await stringLiteralUses({ value: '' }, project, repoRoot);
 
     expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('parse_error');

@@ -25,10 +25,7 @@ async function fetchByMatch(projectId: string) {
 
 // Shorthand-property syntax: `{ project_id }` — equivalent to `{ project_id: project_id }`.
 async function fetchByMatchShorthand(project_id: string) {
-  const result = await sb
-    .from('bid_questions')
-    .match({ project_id })
-    .single();
+  const result = await sb.from('bid_questions').match({ project_id }).single();
   return result;
 }
 

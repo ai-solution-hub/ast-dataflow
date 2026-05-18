@@ -262,8 +262,7 @@ export async function importers(
     args: { ...args, limit },
     results: rows,
     truncated: totalEstimated > rows.length,
-    totalEstimated:
-      totalEstimated > rows.length ? totalEstimated : undefined,
+    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
     durationMs: Date.now() - started,
   };
 }

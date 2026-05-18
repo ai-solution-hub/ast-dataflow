@@ -46,9 +46,7 @@ describe('importers query — fixture', () => {
       repoRoot,
     );
 
-    const byFile = Object.fromEntries(
-      response.results.map((r) => [r.file, r]),
-    );
+    const byFile = Object.fromEntries(response.results.map((r) => [r.file, r]));
 
     expect(byFile['caller-named.ts']?.importStyle).toBe('named');
     expect(byFile['caller-default.ts']?.importStyle).toBe('default');

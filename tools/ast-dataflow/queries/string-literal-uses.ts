@@ -5,11 +5,7 @@ import type {
   StringLiteralUseResult,
   QueryResponse,
 } from '../types';
-import {
-  findEnclosing,
-  toRepoRelative,
-  buildErrorResponse,
-} from '../resolve';
+import { findEnclosing, toRepoRelative, buildErrorResponse } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -55,9 +51,7 @@ function classifyLiteralKind(node: Node): StringLiteralUseKind | null {
   // Rule 3: Tagged template — sql`...`
   // A NoSubstitutionTemplateLiteral or TemplateHead whose parent is a
   // TaggedTemplateExpression. We check whether the tag identifier is 'sql'.
-  if (
-    parentKind === SyntaxKind.TaggedTemplateExpression
-  ) {
+  if (parentKind === SyntaxKind.TaggedTemplateExpression) {
     // This node IS the template (the literal part); parent is the tagged expr.
     const tag = (parent as { getTag?: () => Node }).getTag?.();
     if (tag) {
@@ -73,7 +67,10 @@ function classifyLiteralKind(node: Node): StringLiteralUseKind | null {
   // The string literal is the argument expression of an ElementAccessExpression.
   if (parentKind === SyntaxKind.ElementAccessExpression) {
     // Check that the expression (the object) is `process.env`.
-    const elemAccess = parent as { getExpression?: () => Node; getArgumentExpression?: () => Node };
+    const elemAccess = parent as {
+      getExpression?: () => Node;
+      getArgumentExpression?: () => Node;
+    };
     const argExpr = elemAccess.getArgumentExpression?.();
     if (argExpr && argExpr.getStart() === node.getStart()) {
       // This literal IS the bracket key. Check object is `process.env`.
@@ -136,7 +133,7 @@ export async function stringLiteralUses(
       { ...args, limit },
       'parse_error',
       'The "value" argument is required and must be a non-empty string.',
-      'Provide the exact string literal to search for, e.g. --value \'@/lib/foo\'.',
+      "Provide the exact string literal to search for, e.g. --value '@/lib/foo'.",
       Date.now() - started,
     );
   }

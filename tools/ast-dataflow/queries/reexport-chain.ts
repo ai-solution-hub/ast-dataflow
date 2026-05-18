@@ -1,8 +1,5 @@
 import { resolve } from 'node:path';
-import {
-  type Project,
-  type SourceFile,
-} from 'ts-morph';
+import { type Project, type SourceFile } from 'ts-morph';
 import type {
   ReexportChainArgs,
   ReexportChainResult,
@@ -94,7 +91,10 @@ function buildReexportChain(
   const visitedImporters = new Set<string>(); // abs paths of importers already emitted
 
   // Declaration row (distance 0)
-  const declarationRelPath = toRepoRelative(repoRoot, declarationSf.getFilePath());
+  const declarationRelPath = toRepoRelative(
+    repoRoot,
+    declarationSf.getFilePath(),
+  );
   const declarationPos = (() => {
     const decls = declarationSf.getExportedDeclarations().get(symbolName);
     if (decls && decls.length > 0) {
@@ -333,16 +333,18 @@ export async function reexportChain(
   );
 
   // Convert ChainRow to ReexportChainResult (satisfies BaseResult).
-  const results: ReexportChainResult[] = chainRows.slice(0, limit).map((row) => ({
-    file: row.file,
-    line: row.line,
-    column: row.column,
-    confidence: 'exact',
-    kind: row.kind,
-    symbolName: row.symbolName,
-    throughBarrel: row.throughBarrel,
-    distance: row.distance,
-  }));
+  const results: ReexportChainResult[] = chainRows
+    .slice(0, limit)
+    .map((row) => ({
+      file: row.file,
+      line: row.line,
+      column: row.column,
+      confidence: 'exact',
+      kind: row.kind,
+      symbolName: row.symbolName,
+      throughBarrel: row.throughBarrel,
+      distance: row.distance,
+    }));
 
   return {
     query: 'reexport-chain',

@@ -68,11 +68,7 @@ export type {
 
 // --- enum-uses ---
 export { enumUses } from './queries/enum-uses';
-export type {
-  EnumUsesArgs,
-  EnumUseKind,
-  EnumUseResult,
-} from './types';
+export type { EnumUsesArgs, EnumUseKind, EnumUseResult } from './types';
 
 // --- string-literal-uses ---
 export { stringLiteralUses } from './queries/string-literal-uses';

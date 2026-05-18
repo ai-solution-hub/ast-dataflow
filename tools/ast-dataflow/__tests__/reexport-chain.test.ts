@@ -42,7 +42,9 @@ describe('reexport-chain — scenario 1: symbol imported directly, no barrel hop
     expect(response.query).toBe('reexport-chain');
     expect(response.error).toBeUndefined();
 
-    const declarationRows = response.results.filter((r) => r.kind === 'declaration');
+    const declarationRows = response.results.filter(
+      (r) => r.kind === 'declaration',
+    );
     expect(declarationRows).toHaveLength(1);
     expect(declarationRows[0]).toMatchObject({
       file: 'direct-declaration.ts',
@@ -108,7 +110,9 @@ describe('reexport-chain — scenario 2: one barrel hop produces distance=1 at i
     // Exact count: 1 declaration + 1 reexport + 1 importer = 3 rows
     expect(response.results).toHaveLength(3);
 
-    const declarationRows = response.results.filter((r) => r.kind === 'declaration');
+    const declarationRows = response.results.filter(
+      (r) => r.kind === 'declaration',
+    );
     expect(declarationRows).toHaveLength(1);
     expect(declarationRows[0]).toMatchObject({
       file: 'one-hop-source.ts',
@@ -161,7 +165,9 @@ describe('reexport-chain — scenario 3: two barrel hops yield distance=2 at imp
     // Exact count: 1 declaration + 2 reexports + 1 importer = 4 rows
     expect(response.results).toHaveLength(4);
 
-    const declarationRows = response.results.filter((r) => r.kind === 'declaration');
+    const declarationRows = response.results.filter(
+      (r) => r.kind === 'declaration',
+    );
     expect(declarationRows).toHaveLength(1);
     expect(declarationRows[0]).toMatchObject({
       file: 'two-hop-source.ts',
@@ -279,7 +285,9 @@ describe('reexport-chain — scenario 5: default re-export chain works', () => {
     // Exact count: 1 declaration + 1 reexport + 1 importer = 3 rows
     expect(response.results).toHaveLength(3);
 
-    const declarationRows = response.results.filter((r) => r.kind === 'declaration');
+    const declarationRows = response.results.filter(
+      (r) => r.kind === 'declaration',
+    );
     expect(declarationRows).toHaveLength(1);
     expect(declarationRows[0]).toMatchObject({
       file: 'default-source.ts',

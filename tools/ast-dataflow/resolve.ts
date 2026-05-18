@@ -203,11 +203,16 @@ export function findEnclosing(node: Node): string {
         const m = current as MethodDeclaration;
         const parent = m.getParent();
         // Class method: parent has getName() and is not an ObjectLiteralExpression.
-        const isClassParent = parent && 'getName' in parent &&
+        const isClassParent =
+          parent &&
+          'getName' in parent &&
           parent.getKind() !== SyntaxKind.ObjectLiteralExpression;
         const containerName = isClassParent
-          ? ((parent as { getName: () => string | undefined }).getName() ?? '<anonymous>')
-          : (parent ? resolveObjectLiteralContainerName(parent) : '<Object>');
+          ? ((parent as { getName: () => string | undefined }).getName() ??
+            '<anonymous>')
+          : parent
+            ? resolveObjectLiteralContainerName(parent)
+            : '<Object>';
         return `method:${containerName}.${m.getName()}`;
       }
       case SyntaxKind.PropertyAssignment: {
@@ -358,7 +363,10 @@ export function walkBarrelChain(
         if (consumer.getFilePath() === barrelAbsPath) continue;
         if (consumer.getFilePath() === sourceAbsPath) continue;
 
-        const consumerRelPath = toRepoRelative(repoRoot, consumer.getFilePath());
+        const consumerRelPath = toRepoRelative(
+          repoRoot,
+          consumer.getFilePath(),
+        );
         const importsBarrel = consumer.getImportDeclarations().some((imp) => {
           const resolved = imp.getModuleSpecifierSourceFile();
           return resolved?.getFilePath() === barrelAbsPath;

@@ -1,9 +1,4 @@
-import {
-  Project,
-  SyntaxKind,
-  type CallExpression,
-  type Node,
-} from 'ts-morph';
+import { Project, SyntaxKind, type CallExpression, type Node } from 'ts-morph';
 import type {
   CallersArgs,
   CallSiteResult,
@@ -112,8 +107,7 @@ export async function callers(
     args: { ...args, limit },
     results: rows,
     truncated: totalEstimated > rows.length,
-    totalEstimated:
-      totalEstimated > rows.length ? totalEstimated : undefined,
+    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
     durationMs: Date.now() - started,
   };
 }

@@ -161,7 +161,7 @@ describe('column-reads query — match object', () => {
       repoRoot,
     );
 
-    // match-object.ts line 39: .select('pid:project_id, question_text') — alias read
+    // match-object.ts line 36: .select('pid:project_id, question_text') — alias read
     const aliasHits = response.results.filter(
       (r) => r.file === 'match-object.ts' && r.method === 'select',
     );
@@ -169,7 +169,7 @@ describe('column-reads query — match object', () => {
     expect(aliasHits[0]).toMatchObject({
       columnPath: 'project_id',
       method: 'select',
-      line: 39,
+      line: 36,
     });
   });
 });

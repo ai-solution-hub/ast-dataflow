@@ -31,7 +31,10 @@ async function reassignQuestion(questionId: string, newProjectId: string) {
 }
 
 // Update using shorthand property assignment
-async function reassignQuestionShorthand(questionId: string, project_id: string) {
+async function reassignQuestionShorthand(
+  questionId: string,
+  project_id: string,
+) {
   const { data } = await sb
     .from('bid_questions')
     .update({ project_id })

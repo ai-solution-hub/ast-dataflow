@@ -163,7 +163,9 @@ describe('type-evolution — propertyAccess kind', () => {
 
     // 'other' is a property of TargetType too — confirm we can query it
     // without cross-contamination from 'prop' sites.
-    const propAccessRows = response.results.filter((r) => r.kind === 'propertyAccess');
+    const propAccessRows = response.results.filter(
+      (r) => r.kind === 'propertyAccess',
+    );
     // All propertyAccess rows must have .other in their position context
     // (No 'prop' accesses should appear for the 'other' property probe).
     for (const row of propAccessRows) {
@@ -244,7 +246,14 @@ describe('type-evolution — result shape invariants', () => {
       expect(row.line).toBeGreaterThanOrEqual(1);
       expect(typeof row.column).toBe('number');
       expect(row.column).toBeGreaterThanOrEqual(1);
-      expect(['annotation', 'returnType', 'generic', 'satisfies', 'propertyAccess', 'destructuring']).toContain(row.kind);
+      expect([
+        'annotation',
+        'returnType',
+        'generic',
+        'satisfies',
+        'propertyAccess',
+        'destructuring',
+      ]).toContain(row.kind);
       expect(typeof row.isTypeOnly).toBe('boolean');
       expect(typeof row.enclosing).toBe('string');
     }

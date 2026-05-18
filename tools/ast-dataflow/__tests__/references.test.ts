@@ -49,7 +49,9 @@ describe('references query — read kind', () => {
 
     const readRefs = response.results.filter((r) => r.kind === 'read');
     // case-read.ts line 5: console.log(MY_CONSTANT) — runtime read
-    const inFixture = readRefs.find((r) => r.file === 'case-read.ts' && r.line === 5);
+    const inFixture = readRefs.find(
+      (r) => r.file === 'case-read.ts' && r.line === 5,
+    );
     expect(inFixture).toMatchObject({
       file: 'case-read.ts',
       line: 5,
@@ -74,7 +76,9 @@ describe('references query — write kind', () => {
 
     const writeRefs = response.results.filter((r) => r.kind === 'write');
     // case-write.ts line 9: writableState += 1 — LHS of BinaryExpression
-    const inFixture = writeRefs.find((r) => r.file === 'case-write.ts' && r.line === 9);
+    const inFixture = writeRefs.find(
+      (r) => r.file === 'case-write.ts' && r.line === 9,
+    );
     expect(inFixture).toMatchObject({
       file: 'case-write.ts',
       line: 9,

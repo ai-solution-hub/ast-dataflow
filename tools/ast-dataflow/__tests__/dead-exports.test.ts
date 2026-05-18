@@ -166,7 +166,8 @@ describe('dead-exports — fixture 5: export reachable through one barrel hop', 
     // The key invariant: it must NOT appear as dead with empty barrelChain
     // AND reachableImporters === 0 (that would be a false-positive).
     for (const row of rows) {
-      const falsePositive = row.reachableImporters === 0 && row.barrelChain.length === 0;
+      const falsePositive =
+        row.reachableImporters === 0 && row.barrelChain.length === 0;
       expect(falsePositive).toBe(false);
     }
   });
@@ -188,7 +189,9 @@ describe('dead-exports — fixture 5: export reachable through one barrel hop', 
     // The barrel walker must identify the intermediate barrel-index.ts.
     if (rowsWithChain.length > 0) {
       const allChainFiles = rowsWithChain.flatMap((r) => r.barrelChain);
-      const hasBarrelIndex = allChainFiles.some((f) => f.includes('barrel-index'));
+      const hasBarrelIndex = allChainFiles.some((f) =>
+        f.includes('barrel-index'),
+      );
       expect(hasBarrelIndex).toBe(true);
     }
     // If rowsWithChain is empty, barrelTarget was counted via direct importer — also valid.
@@ -212,7 +215,9 @@ describe('dead-exports — fixture 6: export only referenced within its own file
 
     // sameFileExport is referenced in same-file-only.ts itself but no other file
     // imports it. Same-file usage must not be counted as an importer.
-    const matches = response.results.filter((r) => r.symbol === 'sameFileExport');
+    const matches = response.results.filter(
+      (r) => r.symbol === 'sameFileExport',
+    );
     expect(matches).toHaveLength(1);
     expect(matches[0]).toMatchObject({
       symbol: 'sameFileExport',

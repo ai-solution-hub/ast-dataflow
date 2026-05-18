@@ -5,11 +5,7 @@ import type {
   EnumUseResult,
   QueryResponse,
 } from '../types';
-import {
-  findEnclosing,
-  toRepoRelative,
-  buildErrorResponse,
-} from '../resolve';
+import { findEnclosing, toRepoRelative, buildErrorResponse } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
@@ -46,7 +42,10 @@ function isTypePosition(node: Node): boolean {
  * Find all EnumDeclarations in the project with the given name.
  */
 function findEnumDeclarations(project: Project, enumName: string) {
-  const results: { sf: ReturnType<typeof project.getSourceFile>; node: Node }[] = [];
+  const results: {
+    sf: ReturnType<typeof project.getSourceFile>;
+    node: Node;
+  }[] = [];
 
   for (const sf of project.getSourceFiles()) {
     for (const enumDecl of sf.getEnums()) {
@@ -111,11 +110,15 @@ export async function enumUses(
 
   // Process each enum declaration (handles the case of multiple same-name enums)
   for (const { sf: declarationSf, node: enumDeclNode } of enumDecls) {
-    const enumDeclTyped = enumDeclNode.asKindOrThrow(SyntaxKind.EnumDeclaration);
+    const enumDeclTyped = enumDeclNode.asKindOrThrow(
+      SyntaxKind.EnumDeclaration,
+    );
 
     // --- Emit declaration row for the enum itself ---
     {
-      const lineCol = declarationSf.getLineAndColumnAtPos(enumDeclNode.getStart());
+      const lineCol = declarationSf.getLineAndColumnAtPos(
+        enumDeclNode.getStart(),
+      );
       totalEstimated++;
       if (rows.length < limit) {
         rows.push({

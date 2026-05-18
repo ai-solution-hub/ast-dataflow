@@ -19,17 +19,9 @@ import {
   createProject,
 } from '@/lib/ast-dataflow';
 
-const CALLERS_FIXTURE_DIR = resolve(
-  __dirname,
-  'fixtures',
-  '01-callers',
-);
+const CALLERS_FIXTURE_DIR = resolve(__dirname, 'fixtures', '01-callers');
 
-const IMPORTERS_FIXTURE_DIR = resolve(
-  __dirname,
-  'fixtures',
-  '05-importers',
-);
+const IMPORTERS_FIXTURE_DIR = resolve(__dirname, 'fixtures', '05-importers');
 
 // ── unknown_file ─────────────────────────────────────────────────────────────
 
@@ -94,11 +86,7 @@ describe('ErrorKind: parse_error', () => {
       repoRoot: CALLERS_FIXTURE_DIR,
     });
 
-    const response = await callers(
-      { symbol: ':' },
-      project,
-      repoRoot,
-    );
+    const response = await callers({ symbol: ':' }, project, repoRoot);
 
     expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('parse_error');
@@ -110,11 +98,7 @@ describe('ErrorKind: parse_error', () => {
       repoRoot: IMPORTERS_FIXTURE_DIR,
     });
 
-    const response = await importers(
-      { modulePath: '' },
-      project,
-      repoRoot,
-    );
+    const response = await importers({ modulePath: '' }, project, repoRoot);
 
     expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('parse_error');

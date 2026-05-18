@@ -66,13 +66,17 @@ function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
   try {
     const propAccess = fromCallExpr.getExpression();
     if (propAccess.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const clientExpr = (propAccess as import('ts-morph').PropertyAccessExpression).getExpression();
+      const clientExpr = (
+        propAccess as import('ts-morph').PropertyAccessExpression
+      ).getExpression();
       const symbol = clientExpr.getType().getSymbol();
       if (!symbol) return false;
       const decls = symbol.getDeclarations();
       for (const decl of decls) {
         if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-          const initialiser = (decl as import('ts-morph').VariableDeclaration).getInitializer();
+          const initialiser = (
+            decl as import('ts-morph').VariableDeclaration
+          ).getInitializer();
           if (initialiser?.getKind() === SyntaxKind.CallExpression) {
             const initCall = initialiser as CallExpression;
             const typeArgs = initCall.getTypeArguments();
@@ -113,7 +117,9 @@ function objectLiteralHasKey(
       // Computed string literal: `{ ['project_id']: value }`
       const nameNode = pa.getNameNode();
       if (nameNode.getKind() === SyntaxKind.ComputedPropertyName) {
-        const inner = (nameNode as import('ts-morph').ComputedPropertyName).getExpression();
+        const inner = (
+          nameNode as import('ts-morph').ComputedPropertyName
+        ).getExpression();
         if (
           inner.getKind() === SyntaxKind.StringLiteral &&
           inner.getText().slice(1, -1) === name
@@ -125,8 +131,9 @@ function objectLiteralHasKey(
     }
     if (kind === SyntaxKind.ShorthandPropertyAssignment) {
       return (
-        prop as import('ts-morph').ShorthandPropertyAssignment
-      ).getName() === name;
+        (prop as import('ts-morph').ShorthandPropertyAssignment).getName() ===
+        name
+      );
     }
     return false;
   });
@@ -184,7 +191,9 @@ function resolveOneHopObjectLiteral(
   const enclosingScope = findEnclosingFunctionBody(identifierNode);
 
   // Walk VariableDeclarations within the enclosing function scope only.
-  for (const varDecl of enclosingScope.getDescendantsOfKind(SyntaxKind.VariableDeclaration)) {
+  for (const varDecl of enclosingScope.getDescendantsOfKind(
+    SyntaxKind.VariableDeclaration,
+  )) {
     if (varDecl.getName() !== identText) continue;
     const init = varDecl.getInitializer();
     if (!init) continue;
@@ -245,7 +254,10 @@ function collectChain(
       const methodName = propAccess.getName();
       const grandParent = propAccess.getParent();
       if (grandParent?.getKind() === SyntaxKind.CallExpression) {
-        chain.push({ method: methodName, callExpr: grandParent as CallExpression });
+        chain.push({
+          method: methodName,
+          callExpr: grandParent as CallExpression,
+        });
         parent = grandParent.getParent();
       } else {
         break;
@@ -401,11 +413,7 @@ export async function columnWrites(
           // the first arg which is the row data).
           const payloadArg = chainArgs[0];
 
-          const inspection = inspectWriteArg(
-            payloadArg,
-            args.column,
-            isTyped,
-          );
+          const inspection = inspectWriteArg(payloadArg, args.column, isTyped);
 
           if (!inspection.found) continue;
 

@@ -63,7 +63,7 @@ export interface CallersArgs {
 
 export interface ImportersArgs {
   modulePath: string; // '@/lib/ai/digest' or 'lib/ai/digest.ts'
-  limit?: number;     // default 200
+  limit?: number; // default 200
 }
 
 export type ImportStyle =
@@ -113,9 +113,9 @@ export type ColumnReadMethod = 'select' | 'eq' | 'match' | 'rpc-payload';
 
 export interface ColumnReadResult extends BaseResult {
   method: ColumnReadMethod;
-  columnPath: string;   // the matched column literal or object key
-  table: string;        // echo of the table arg
-  isTyped: boolean;     // true if the Supabase client is type-instantiated with a row type
+  columnPath: string; // the matched column literal or object key
+  table: string; // echo of the table arg
+  isTyped: boolean; // true if the Supabase client is type-instantiated with a row type
 }
 
 export interface ColumnWritesArgs {
@@ -139,13 +139,18 @@ export interface ColumnWritesArgs {
  *                  corpus name `bid_questions.project_id`, so the false-negative
  *                  surface is empty today.
  */
-export type ColumnWriteMethod = 'insert' | 'update' | 'upsert' | 'match' | 'rpc-payload';
+export type ColumnWriteMethod =
+  | 'insert'
+  | 'update'
+  | 'upsert'
+  | 'match'
+  | 'rpc-payload';
 
 export interface ColumnWriteResult extends BaseResult {
   method: ColumnWriteMethod;
-  columnPath: string;  // the matched object property key
-  table: string;       // echo of the table arg
-  isTyped: boolean;    // true if the Supabase client is type-instantiated
+  columnPath: string; // the matched object property key
+  table: string; // echo of the table arg
+  isTyped: boolean; // true if the Supabase client is type-instantiated
 }
 
 /**

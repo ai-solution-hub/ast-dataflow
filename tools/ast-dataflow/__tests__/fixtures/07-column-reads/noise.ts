@@ -18,19 +18,13 @@ const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 
 // Wrong table — should NOT be returned.
 async function wrongTable() {
-  const result = await sb
-    .from('other_table')
-    .select('project_id')
-    .single();
+  const result = await sb.from('other_table').select('project_id').single();
   return result;
 }
 
 // Wrong column — should NOT be returned.
 async function wrongColumn() {
-  const result = await sb
-    .from('bid_questions')
-    .select('other_column')
-    .single();
+  const result = await sb.from('bid_questions').select('other_column').single();
   return result;
 }
 

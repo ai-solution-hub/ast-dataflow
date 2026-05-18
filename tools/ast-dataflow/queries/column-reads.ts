@@ -41,7 +41,9 @@ function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
     const expr = (base as CallExpression).getExpression?.();
     if (!expr) break;
     if (expr.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const inner = (expr as import('ts-morph').PropertyAccessExpression).getExpression();
+      const inner = (
+        expr as import('ts-morph').PropertyAccessExpression
+      ).getExpression();
       if (inner.getKind() === SyntaxKind.CallExpression) {
         base = inner as CallExpression;
       } else {
@@ -79,14 +81,18 @@ function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
   try {
     const propAccess = fromCallExpr.getExpression();
     if (propAccess.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const clientExpr = (propAccess as import('ts-morph').PropertyAccessExpression).getExpression();
+      const clientExpr = (
+        propAccess as import('ts-morph').PropertyAccessExpression
+      ).getExpression();
       // Resolve to the variable's type via its declaration.
       const symbol = clientExpr.getType().getSymbol();
       if (!symbol) return false;
       const decls = symbol.getDeclarations();
       for (const decl of decls) {
         if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-          const initialiser = (decl as import('ts-morph').VariableDeclaration).getInitializer();
+          const initialiser = (
+            decl as import('ts-morph').VariableDeclaration
+          ).getInitializer();
           if (initialiser?.getKind() === SyntaxKind.CallExpression) {
             const initCall = initialiser as CallExpression;
             const typeArgs = initCall.getTypeArguments();
@@ -119,7 +125,10 @@ function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
  * - Nested relation syntax: `'id, bid_responses ( id, text )'` — only
  *   top-level tokens are matched (tokens before the first `(`).
  */
-function selectContainsColumn(selectStr: string, targetColumn: string): boolean {
+function selectContainsColumn(
+  selectStr: string,
+  targetColumn: string,
+): boolean {
   // Strip nested relation blocks (anything in parentheses including the content).
   const withoutRelations = selectStr.replace(/\(.*?\)/gs, '');
   const tokens = withoutRelations
@@ -130,7 +139,8 @@ function selectContainsColumn(selectStr: string, targetColumn: string): boolean 
       // the right of the first `:`. Without a `:`, the whole token is the
       // column name.
       const colonIdx = trimmed.indexOf(':');
-      const columnPart = colonIdx >= 0 ? trimmed.slice(colonIdx + 1).trim() : trimmed;
+      const columnPart =
+        colonIdx >= 0 ? trimmed.slice(colonIdx + 1).trim() : trimmed;
       // Strip any trailing whitespace-separated alias (defensive against
       // SQL-style `'project_id as pid'`).
       return columnPart.split(/\s+/)[0].trim();
@@ -155,8 +165,9 @@ function objectLiteralHasKey(
     }
     if (kind === SyntaxKind.ShorthandPropertyAssignment) {
       return (
-        prop as import('ts-morph').ShorthandPropertyAssignment
-      ).getName() === name;
+        (prop as import('ts-morph').ShorthandPropertyAssignment).getName() ===
+        name
+      );
     }
     return false;
   });
@@ -169,7 +180,9 @@ function objectLiteralHasKey(
  * Returns an array of { method: string; callExpr: CallExpression } items
  * representing each step in the fluent chain above the `.from()` call.
  */
-function collectChain(fromCallExpr: CallExpression): Array<{ method: string; callExpr: CallExpression }> {
+function collectChain(
+  fromCallExpr: CallExpression,
+): Array<{ method: string; callExpr: CallExpression }> {
   const chain: Array<{ method: string; callExpr: CallExpression }> = [];
 
   let parent: Node | undefined = fromCallExpr.getParent();
@@ -179,7 +192,10 @@ function collectChain(fromCallExpr: CallExpression): Array<{ method: string; cal
       const methodName = propAccess.getName();
       const grandParent = propAccess.getParent();
       if (grandParent?.getKind() === SyntaxKind.CallExpression) {
-        chain.push({ method: methodName, callExpr: grandParent as CallExpression });
+        chain.push({
+          method: methodName,
+          callExpr: grandParent as CallExpression,
+        });
         parent = grandParent.getParent();
       } else {
         break;
@@ -314,7 +330,8 @@ export async function columnReads(
 
         for (const { method, callExpr } of chain) {
           const chainArgs = callExpr.getArguments();
-          let hit: { method: ColumnReadMethod; columnPath: string } | null = null;
+          let hit: { method: ColumnReadMethod; columnPath: string } | null =
+            null;
 
           if (method === 'select' && chainArgs.length >= 1) {
             const arg = chainArgs[0];
@@ -339,7 +356,8 @@ export async function columnReads(
           } else if (method === 'match' && chainArgs.length >= 1) {
             const arg = chainArgs[0];
             if (arg.getKind() === SyntaxKind.ObjectLiteralExpression) {
-              const objLiteral = arg as import('ts-morph').ObjectLiteralExpression;
+              const objLiteral =
+                arg as import('ts-morph').ObjectLiteralExpression;
               if (objectLiteralHasKey(objLiteral, args.column)) {
                 hit = { method: 'match', columnPath: args.column };
               }
@@ -378,14 +396,20 @@ export async function columnReads(
         try {
           const rpcExpr = rpcCallExpr.getExpression();
           if (rpcExpr.getKind() === SyntaxKind.PropertyAccessExpression) {
-            const clientExpr = (rpcExpr as import('ts-morph').PropertyAccessExpression).getExpression();
+            const clientExpr = (
+              rpcExpr as import('ts-morph').PropertyAccessExpression
+            ).getExpression();
             const symbol = clientExpr.getType().getSymbol();
             if (symbol) {
               for (const decl of symbol.getDeclarations()) {
                 if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-                  const init = (decl as import('ts-morph').VariableDeclaration).getInitializer();
+                  const init = (
+                    decl as import('ts-morph').VariableDeclaration
+                  ).getInitializer();
                   if (init?.getKind() === SyntaxKind.CallExpression) {
-                    if ((init as CallExpression).getTypeArguments().length > 0) {
+                    if (
+                      (init as CallExpression).getTypeArguments().length > 0
+                    ) {
                       rpcIsTyped = true;
                     }
                   }

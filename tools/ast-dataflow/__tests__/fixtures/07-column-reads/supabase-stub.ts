@@ -5,8 +5,15 @@
 export interface SupabaseClient<DB = unknown> {
   from<T extends string>(
     table: T,
-  ): QueryBuilder<DB extends { public: { Tables: Record<T, { Row: infer R }> } } ? R : Record<string, unknown>>;
-  rpc(fn: string, payload: Record<string, unknown>): Promise<{ data: unknown; error: unknown }>;
+  ): QueryBuilder<
+    DB extends { public: { Tables: Record<T, { Row: infer R }> } }
+      ? R
+      : Record<string, unknown>
+  >;
+  rpc(
+    fn: string,
+    payload: Record<string, unknown>,
+  ): Promise<{ data: unknown; error: unknown }>;
 }
 
 export interface QueryBuilder<Row> {

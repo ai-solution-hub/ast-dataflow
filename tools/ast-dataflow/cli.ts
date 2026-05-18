@@ -1,6 +1,18 @@
 #!/usr/bin/env bun
 import { resolve } from 'node:path';
-import { callers, columnReads, columnWrites, deadExports, enumUses, importers, reexportChain, references, stringLiteralUses, typeEvolution, createProject } from '@/lib/ast-dataflow';
+import {
+  callers,
+  columnReads,
+  columnWrites,
+  deadExports,
+  enumUses,
+  importers,
+  reexportChain,
+  references,
+  stringLiteralUses,
+  typeEvolution,
+  createProject,
+} from '@/lib/ast-dataflow';
 import type { ReferenceKind } from '@/lib/ast-dataflow';
 
 interface ParsedArgs {
@@ -48,7 +60,10 @@ const REFERENCE_KINDS: ReferenceKind[] = [
  *   `error.kind` without parsing stderr.
  */
 function emitResponse(
-  response: { error?: { kind: string; message: string; hint?: string }; [k: string]: unknown },
+  response: {
+    error?: { kind: string; message: string; hint?: string };
+    [k: string]: unknown;
+  },
   pretty: boolean,
 ): void {
   if (pretty && response.error) {
@@ -199,7 +214,9 @@ async function main(): Promise<void> {
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const response = await callers(
         { symbol, ...(limit ? { limit } : {}) },
         project,
@@ -212,13 +229,17 @@ async function main(): Promise<void> {
     case 'importers': {
       const modulePath = parsed.flags.module;
       if (typeof modulePath !== 'string') {
-        console.error("importers requires --module <module-path>");
-        console.error("Example: bun run ast-dataflow importers --module '@/lib/ai/digest'");
+        console.error('importers requires --module <module-path>');
+        console.error(
+          "Example: bun run ast-dataflow importers --module '@/lib/ai/digest'",
+        );
         process.exit(2);
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const response = await importers(
         { modulePath, ...(limit ? { limit } : {}) },
         project,
@@ -232,15 +253,20 @@ async function main(): Promise<void> {
       const symbol = parsed.flags.symbol;
       if (typeof symbol !== 'string') {
         console.error('references requires --symbol <file:name>');
-        console.error("Example: bun run ast-dataflow references --symbol 'types/bid.ts:BidState'");
+        console.error(
+          "Example: bun run ast-dataflow references --symbol 'types/bid.ts:BidState'",
+        );
         process.exit(2);
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const kindArg = parsed.flags.kind;
       const kind =
-        typeof kindArg === 'string' && REFERENCE_KINDS.includes(kindArg as ReferenceKind)
+        typeof kindArg === 'string' &&
+        REFERENCE_KINDS.includes(kindArg as ReferenceKind)
           ? (kindArg as ReferenceKind)
           : undefined;
       if (kindArg && !kind) {
@@ -263,17 +289,23 @@ async function main(): Promise<void> {
       const column = parsed.flags.column;
       if (typeof table !== 'string' || !table) {
         console.error('column-reads requires --table <table-name>');
-        console.error('Example: bun run ast-dataflow column-reads --table bid_questions --column project_id');
+        console.error(
+          'Example: bun run ast-dataflow column-reads --table bid_questions --column project_id',
+        );
         process.exit(2);
       }
       if (typeof column !== 'string' || !column) {
         console.error('column-reads requires --column <column-name>');
-        console.error('Example: bun run ast-dataflow column-reads --table bid_questions --column project_id');
+        console.error(
+          'Example: bun run ast-dataflow column-reads --table bid_questions --column project_id',
+        );
         process.exit(2);
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await columnReads(
         {
@@ -294,17 +326,23 @@ async function main(): Promise<void> {
       const column = parsed.flags.column;
       if (typeof table !== 'string' || !table) {
         console.error('column-writes requires --table <table-name>');
-        console.error('Example: bun run ast-dataflow column-writes --table bid_questions --column project_id');
+        console.error(
+          'Example: bun run ast-dataflow column-writes --table bid_questions --column project_id',
+        );
         process.exit(2);
       }
       if (typeof column !== 'string' || !column) {
         console.error('column-writes requires --column <column-name>');
-        console.error('Example: bun run ast-dataflow column-writes --table bid_questions --column project_id');
+        console.error(
+          'Example: bun run ast-dataflow column-writes --table bid_questions --column project_id',
+        );
         process.exit(2);
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await columnWrites(
         {
@@ -325,17 +363,23 @@ async function main(): Promise<void> {
       const property = parsed.flags.property;
       if (typeof typeName !== 'string' || !typeName) {
         console.error('type-evolution requires --type <TypeName>');
-        console.error('Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id');
+        console.error(
+          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id',
+        );
         process.exit(2);
       }
       if (typeof property !== 'string' || !property) {
         console.error('type-evolution requires --property <propertyName>');
-        console.error('Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id');
+        console.error(
+          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id',
+        );
         process.exit(2);
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const fileArg = parsed.flags.file;
       const file = typeof fileArg === 'string' ? fileArg : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
@@ -359,12 +403,16 @@ async function main(): Promise<void> {
       const symbolsFileArg = parsed.flags.symbols;
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await deadExports(
         {
           ...(typeof symbolArg === 'string' ? { symbol: symbolArg } : {}),
-          ...(typeof symbolsFileArg === 'string' ? { symbolsFile: symbolsFileArg } : {}),
+          ...(typeof symbolsFileArg === 'string'
+            ? { symbolsFile: symbolsFileArg }
+            : {}),
           ...(limit ? { limit } : {}),
           ...(excludeTests ? { excludeTests } : {}),
         },
@@ -379,14 +427,18 @@ async function main(): Promise<void> {
       const symbolArg = parsed.flags.symbol;
       if (typeof symbolArg !== 'string' || !symbolArg) {
         console.error('reexport-chain requires --symbol <name>');
-        console.error('Example: bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx');
+        console.error(
+          'Example: bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
+        );
         process.exit(2);
       }
       const fromArg = parsed.flags.from;
       const from = typeof fromArg === 'string' ? fromArg : undefined;
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await reexportChain(
         {
@@ -407,14 +459,18 @@ async function main(): Promise<void> {
       const enumName = parsed.flags.enum;
       if (typeof enumName !== 'string' || !enumName) {
         console.error('enum-uses requires --enum <EnumName>');
-        console.error('Example: bun scripts/ast-dataflow-cli.ts enum-uses --enum OrderStatus');
+        console.error(
+          'Example: bun scripts/ast-dataflow-cli.ts enum-uses --enum OrderStatus',
+        );
         process.exit(2);
       }
       const memberArg = parsed.flags.member;
       const member = typeof memberArg === 'string' ? memberArg : undefined;
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const response = await enumUses(
         {
           enum: enumName,
@@ -433,12 +489,16 @@ async function main(): Promise<void> {
       const valueArg = parsed.flags.value;
       if (typeof valueArg !== 'string' || !valueArg) {
         console.error('string-literal-uses requires --value <literal>');
-        console.error("Example: bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'");
+        console.error(
+          "Example: bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'",
+        );
         process.exit(2);
       }
       const limitArg = parsed.flags.limit;
       const limit =
-        typeof limitArg === 'string' ? Number.parseInt(limitArg, 10) : undefined;
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
       const response = await stringLiteralUses(
         {
           value: valueArg,
@@ -453,7 +513,9 @@ async function main(): Promise<void> {
     }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
-      console.error('Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses');
+      console.error(
+        'Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses',
+      );
       process.exit(2);
     }
   }

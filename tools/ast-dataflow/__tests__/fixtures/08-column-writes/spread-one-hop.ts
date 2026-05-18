@@ -39,7 +39,10 @@ async function updateWithLocalSpread(questionId: string, newProjectId: string) {
 
 // Scenario B: spread source is a function parameter — beyond one hop.
 // Expected: method='update', confidence='indirect' (cannot trace the param).
-async function updateWithParamSpread(questionId: string, payload: { project_id: string }) {
+async function updateWithParamSpread(
+  questionId: string,
+  payload: { project_id: string },
+) {
   const { data } = await sb
     .from('bid_questions')
     .update(payload)

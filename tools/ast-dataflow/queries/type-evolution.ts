@@ -1,8 +1,4 @@
-import {
-  type Project,
-  SyntaxKind,
-  type Node,
-} from 'ts-morph';
+import { type Project, SyntaxKind, type Node } from 'ts-morph';
 import type {
   TypeEvolutionArgs,
   TypeEvolutionResult,
@@ -188,14 +184,19 @@ function findPropertySites(
   propertyName: string,
   limit: number,
 ): Array<{ node: Node; kind: 'propertyAccess' | 'destructuring' }> {
-  const results: Array<{ node: Node; kind: 'propertyAccess' | 'destructuring' }> = [];
+  const results: Array<{
+    node: Node;
+    kind: 'propertyAccess' | 'destructuring';
+  }> = [];
   const checker = project.getTypeChecker();
 
   for (const sf of project.getSourceFiles()) {
     if (results.length >= limit) break;
 
     // Scan PropertyAccessExpression nodes: obj.prop
-    for (const pa of sf.getDescendantsOfKind(SyntaxKind.PropertyAccessExpression)) {
+    for (const pa of sf.getDescendantsOfKind(
+      SyntaxKind.PropertyAccessExpression,
+    )) {
       if (results.length >= limit) break;
       const propName = pa.getName();
       if (propName !== propertyName) continue;
@@ -210,7 +211,9 @@ function findPropertySites(
     }
 
     // Scan ObjectBindingPatterns: const { prop } = x
-    for (const obp of sf.getDescendantsOfKind(SyntaxKind.ObjectBindingPattern)) {
+    for (const obp of sf.getDescendantsOfKind(
+      SyntaxKind.ObjectBindingPattern,
+    )) {
       if (results.length >= limit) break;
 
       const elements = obp.getElements();
@@ -306,7 +309,8 @@ export async function typeEvolution(
         const decl = exported[0];
         if ('findReferences' in decl) {
           found = {
-            declaration: decl as (import('../resolve').ResolvedSymbol)['declaration'],
+            declaration:
+              decl as import('../resolve').ResolvedSymbol['declaration'],
             declarationFile: toRepoRelative(repoRoot, sf.getFilePath()),
             declarationName: args.type,
           };

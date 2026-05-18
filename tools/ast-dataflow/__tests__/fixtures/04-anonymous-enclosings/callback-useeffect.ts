@@ -5,7 +5,9 @@ import { target } from './target';
 // Walking past the anonymous useEffect callback bubbles up to MyComponent.
 // expected: fn:MyComponent
 export const MyComponent = () => {
-  function useEffect(_fn: () => void): void { /* stub */ }
+  function useEffect(_fn: () => void): void {
+    /* stub */
+  }
   useEffect(() => {
     target();
   });

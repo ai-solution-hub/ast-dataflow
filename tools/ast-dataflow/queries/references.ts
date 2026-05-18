@@ -61,13 +61,17 @@ function classifyKind(node: Node): ReferenceKind {
   }
 
   // Rule 4: inside an ExportSpecifier of a re-export (export { X } from '...')
-  const exportSpecifier = node.getFirstAncestorByKind(SyntaxKind.ExportSpecifier);
+  const exportSpecifier = node.getFirstAncestorByKind(
+    SyntaxKind.ExportSpecifier,
+  );
   if (exportSpecifier) {
     const exportDecl = exportSpecifier.getParent();
     // An ExportDeclaration with a module specifier is a re-export.
     if (
       exportDecl?.getKind() === SyntaxKind.ExportDeclaration &&
-      (exportDecl as { hasModuleSpecifier?: () => boolean }).hasModuleSpecifier?.()
+      (
+        exportDecl as { hasModuleSpecifier?: () => boolean }
+      ).hasModuleSpecifier?.()
     ) {
       return 'reexport';
     }
@@ -79,7 +83,10 @@ function classifyKind(node: Node): ReferenceKind {
   if (parent) {
     const parentKind = parent.getKind();
     if (parentKind === SyntaxKind.BinaryExpression) {
-      const binExpr = parent as { getLeft: () => Node; getOperatorToken: () => Node };
+      const binExpr = parent as {
+        getLeft: () => Node;
+        getOperatorToken: () => Node;
+      };
       const left = binExpr.getLeft();
       if (left === node || left.getStart() === node.getStart()) {
         // Check it's an assignment operator
@@ -178,8 +185,7 @@ export async function references(
     args: { ...args, limit },
     results: rows,
     truncated: totalEstimated > rows.length,
-    totalEstimated:
-      totalEstimated > rows.length ? totalEstimated : undefined,
+    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
     durationMs: Date.now() - started,
   };
 }

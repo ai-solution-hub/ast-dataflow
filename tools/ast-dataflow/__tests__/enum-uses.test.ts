@@ -98,7 +98,9 @@ describe('enum-uses — fixture 2: member access rows', () => {
 
     const response = await enumUses({ enum: 'OrderStatus' }, project, repoRoot);
 
-    const memberAccessRows = response.results.filter((r) => r.kind === 'memberAccess');
+    const memberAccessRows = response.results.filter(
+      (r) => r.kind === 'memberAccess',
+    );
     // case-member-access.ts: PENDING, ACTIVE, CLOSED (3)
     // target-enum.ts internal use: PENDING in defaultStatus (1)
     // case-aliased-import.ts: OS.ACTIVE, OS.PENDING (2)
@@ -115,7 +117,9 @@ describe('enum-uses — fixture 2: member access rows', () => {
 
     const response = await enumUses({ enum: 'OrderStatus' }, project, repoRoot);
 
-    const memberAccessRows = response.results.filter((r) => r.kind === 'memberAccess');
+    const memberAccessRows = response.results.filter(
+      (r) => r.kind === 'memberAccess',
+    );
     for (const row of memberAccessRows) {
       expect(typeof row.enclosing).toBe('string');
       expect(row.enclosing.length).toBeGreaterThan(0);
@@ -136,8 +140,14 @@ describe('enum-uses — fixture 2: member access rows', () => {
     expect(aliasedMemberAccessRows).toHaveLength(2);
     expect(aliasedMemberAccessRows).toEqual(
       expect.arrayContaining([
-        expect.objectContaining({ memberName: 'ACTIVE', file: 'case-aliased-import.ts' }),
-        expect.objectContaining({ memberName: 'PENDING', file: 'case-aliased-import.ts' }),
+        expect.objectContaining({
+          memberName: 'ACTIVE',
+          file: 'case-aliased-import.ts',
+        }),
+        expect.objectContaining({
+          memberName: 'PENDING',
+          file: 'case-aliased-import.ts',
+        }),
       ]),
     );
   });
@@ -222,7 +232,9 @@ describe('enum-uses — fixture 4: member filter narrows results', () => {
 
     expect(response.error).toBeUndefined();
 
-    const memberAccessRows = response.results.filter((r) => r.kind === 'memberAccess');
+    const memberAccessRows = response.results.filter(
+      (r) => r.kind === 'memberAccess',
+    );
     // When filtering to PENDING, all memberAccess rows must have memberName 'PENDING'
     for (const row of memberAccessRows) {
       expect(row.memberName).toBe('PENDING');
@@ -288,9 +300,13 @@ describe('enum-uses — result shape invariants', () => {
       expect(row.line).toBeGreaterThanOrEqual(1);
       expect(typeof row.column).toBe('number');
       expect(row.column).toBeGreaterThanOrEqual(1);
-      expect(['declaration', 'memberAccess', 'typePosition']).toContain(row.kind);
+      expect(['declaration', 'memberAccess', 'typePosition']).toContain(
+        row.kind,
+      );
       // memberName: null for enum-level rows, string for member rows
-      expect(row.memberName === null || typeof row.memberName === 'string').toBe(true);
+      expect(
+        row.memberName === null || typeof row.memberName === 'string',
+      ).toBe(true);
       expect(typeof row.enclosing).toBe('string');
       expect(row.confidence).toBe('exact');
     }
@@ -310,7 +326,11 @@ describe('enum-uses — result shape invariants', () => {
   it('returns structured error for unknown enum name', async () => {
     const { project, repoRoot } = makeProject();
 
-    const response = await enumUses({ enum: 'NonExistentEnum' }, project, repoRoot);
+    const response = await enumUses(
+      { enum: 'NonExistentEnum' },
+      project,
+      repoRoot,
+    );
 
     expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('out_of_corpus');

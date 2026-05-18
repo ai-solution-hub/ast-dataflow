@@ -2,11 +2,7 @@ import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { callers, createProject } from '@/lib/ast-dataflow';
 
-const FIXTURE_DIR = resolve(
-  __dirname,
-  'fixtures',
-  '01-callers',
-);
+const FIXTURE_DIR = resolve(__dirname, 'fixtures', '01-callers');
 
 const ANON_FIXTURE_DIR = resolve(
   __dirname,
@@ -155,7 +151,9 @@ describe('callers query — anonymous enclosing resolution', () => {
       project,
       repoRoot,
     );
-    const row = response.results.find((r) => r.file === 'property-assignment.ts' && r.line === 8);
+    const row = response.results.find(
+      (r) => r.file === 'property-assignment.ts' && r.line === 8,
+    );
     expect(row?.enclosing).toBe('method:myService.doWork');
   });
 
@@ -166,7 +164,9 @@ describe('callers query — anonymous enclosing resolution', () => {
       project,
       repoRoot,
     );
-    const row = response.results.find((r) => r.file === 'property-assignment.ts' && r.line === 16);
+    const row = response.results.find(
+      (r) => r.file === 'property-assignment.ts' && r.line === 16,
+    );
     expect(row?.enclosing).toBe('method:anotherService.transform');
   });
 
@@ -188,7 +188,9 @@ describe('callers query — anonymous enclosing resolution', () => {
       project,
       repoRoot,
     );
-    const row = response.results.find((r) => r.file === 'callback-useeffect.ts');
+    const row = response.results.find(
+      (r) => r.file === 'callback-useeffect.ts',
+    );
     expect(row?.enclosing).toBe('fn:MyComponent');
   });
 
@@ -199,7 +201,9 @@ describe('callers query — anonymous enclosing resolution', () => {
       project,
       repoRoot,
     );
-    const row = response.results.find((r) => r.file === 'module-export-arrow.ts');
+    const row = response.results.find(
+      (r) => r.file === 'module-export-arrow.ts',
+    );
     expect(row?.enclosing).toBe('fn:GET');
   });
 
@@ -210,7 +214,9 @@ describe('callers query — anonymous enclosing resolution', () => {
       project,
       repoRoot,
     );
-    const row = response.results.find((r) => r.file === 'module-export-fn-decl.ts');
+    const row = response.results.find(
+      (r) => r.file === 'module-export-fn-decl.ts',
+    );
     expect(row?.enclosing).toBe('fn:POST');
   });
 

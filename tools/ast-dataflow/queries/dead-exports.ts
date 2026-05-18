@@ -11,7 +11,12 @@ import type {
   DeadExportKind,
   QueryResponse,
 } from '../types';
-import { buildErrorResponse, toRepoRelative, walkBarrelChain, isTestFilePath } from '../resolve';
+import {
+  buildErrorResponse,
+  toRepoRelative,
+  walkBarrelChain,
+  isTestFilePath,
+} from '../resolve';
 
 const DEFAULT_LIMIT = 200;
 
