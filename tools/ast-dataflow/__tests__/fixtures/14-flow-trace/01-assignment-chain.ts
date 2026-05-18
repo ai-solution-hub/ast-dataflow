@@ -1,7 +1,7 @@
 // Fixture: linear assignment chain A → B → C
-// origin: const a (line 7)
-// hop 2: const b = a (line 8)
-// hop 3: const c = b (line 9)
+// origin: const a (line 8)
+// hop 2: const b = a (line 9)
+// hop 3: const c = b (line 10)
 // no return — chain ends at c
 
 export function processChain() {

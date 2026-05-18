@@ -45,6 +45,7 @@ describe('flow-trace — assignment chain', () => {
           file: '01-assignment-chain.ts',
           line: 8,
           confidence: 'exact',
+          enclosing: 'fn:processChain',
           origin: expect.objectContaining({
             symbol: 'a',
             file: '01-assignment-chain.ts',
@@ -315,7 +316,6 @@ describe('flow-trace — ORIGIN_NOT_RESOLVABLE', () => {
     );
 
     expect(response.results).toHaveLength(0);
-    expect(response.error).toBeDefined();
     expect(response.error!.kind).toBe('ORIGIN_NOT_RESOLVABLE');
     expect(response.truncated).toBe(false);
   });
@@ -340,7 +340,6 @@ describe('flow-trace — ORIGIN_NOT_VALUE_PRODUCING', () => {
     );
 
     expect(response.results).toHaveLength(0);
-    expect(response.error).toBeDefined();
     expect(response.error!.kind).toBe('ORIGIN_NOT_VALUE_PRODUCING');
     expect(response.truncated).toBe(false);
   });
@@ -370,6 +369,6 @@ describe('flow-trace — truncation at row cap', () => {
     expect(response.error).toBeUndefined();
     expect(response.results).toHaveLength(1);
     expect(response.truncated).toBe(true);
-    expect(response.totalEstimated).toBeGreaterThanOrEqual(2);
+    expect(response.totalEstimated).toBe(3);
   });
 });
