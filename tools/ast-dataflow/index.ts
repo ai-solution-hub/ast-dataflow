@@ -77,3 +77,11 @@ export type {
   StringLiteralUseKind,
   StringLiteralUseResult,
 } from './types';
+
+// --- flow-trace ---
+export { flowTrace } from './queries/flow-trace';
+export type {
+  FlowTraceArgs,
+  FlowTraceHopKind,
+  FlowTraceRow,
+} from './types';

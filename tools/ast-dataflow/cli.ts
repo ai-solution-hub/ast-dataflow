@@ -6,6 +6,7 @@ import {
   columnWrites,
   deadExports,
   enumUses,
+  flowTrace,
   importers,
   reexportChain,
   references,
@@ -184,9 +185,25 @@ function printCatalogue(): void {
             example:
               "bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'",
           },
+          // --- flow-trace ---
+          {
+            name: 'flow-trace',
+            args: [
+              '--origin-file <repo-root-relative-path>',
+              '--origin-line <N>',
+              '--origin-column <N>',
+              '[--max-depth <N>]',
+              '[--inter-function]',
+              '[--limit <N>]',
+              '[--exclude-tests]',
+              '[--json | --pretty]',
+            ],
+            example:
+              'bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/bid/bid-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
+          },
         ],
         notes:
-          'S6 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S7 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + flow-trace queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
@@ -511,10 +528,102 @@ async function main(): Promise<void> {
       emitResponse(response, pretty);
       return;
     }
+    // --- flow-trace ---
+    case 'flow-trace': {
+      const originFile = parsed.flags['origin-file'];
+      const originLineRaw = parsed.flags['origin-line'];
+      const originColumnRaw = parsed.flags['origin-column'];
+
+      if (typeof originFile !== 'string' || !originFile) {
+        console.error(
+          'flow-trace requires --origin-file <repo-root-relative-path>',
+        );
+        console.error(
+          'Example: bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/bid/bid-queries.ts --origin-line 42 --origin-column 9',
+        );
+        process.exit(2);
+      }
+      if (typeof originLineRaw !== 'string' || !originLineRaw) {
+        console.error('flow-trace requires --origin-line <N>');
+        process.exit(2);
+      }
+      if (typeof originColumnRaw !== 'string' || !originColumnRaw) {
+        console.error('flow-trace requires --origin-column <N>');
+        process.exit(2);
+      }
+
+      const originLine = Number.parseInt(originLineRaw, 10);
+      const originColumn = Number.parseInt(originColumnRaw, 10);
+      if (Number.isNaN(originLine) || originLine < 1) {
+        console.error('--origin-line must be a positive integer');
+        process.exit(2);
+      }
+      if (Number.isNaN(originColumn) || originColumn < 1) {
+        console.error('--origin-column must be a positive integer');
+        process.exit(2);
+      }
+
+      const maxDepthRaw = parsed.flags['max-depth'];
+      const maxDepth =
+        typeof maxDepthRaw === 'string'
+          ? Number.parseInt(maxDepthRaw, 10)
+          : undefined;
+      if (maxDepth !== undefined && (Number.isNaN(maxDepth) || maxDepth < 1 || maxDepth > 20)) {
+        console.error('--max-depth must be an integer between 1 and 20');
+        process.exit(2);
+      }
+
+      const interFunction = parsed.flags['inter-function'] === true;
+      const limitArg = parsed.flags.limit;
+      const limit =
+        typeof limitArg === 'string'
+          ? Number.parseInt(limitArg, 10)
+          : undefined;
+      const excludeTests = parsed.flags['exclude-tests'] === true;
+      const pretty = parsed.flags.pretty === true;
+
+      // Validate for unknown flags (PRODUCT.md invariant 29).
+      const knownFlags = new Set([
+        'origin-file',
+        'origin-line',
+        'origin-column',
+        'max-depth',
+        'inter-function',
+        'limit',
+        'exclude-tests',
+        'json',
+        'pretty',
+      ]);
+      for (const flag of Object.keys(parsed.flags)) {
+        if (!knownFlags.has(flag)) {
+          console.error(`Unknown flag: --${flag}`);
+          console.error(
+            'Valid flags: --origin-file, --origin-line, --origin-column, --max-depth, --inter-function, --limit, --exclude-tests, --json, --pretty',
+          );
+          process.exit(2);
+        }
+      }
+
+      const response = await flowTrace(
+        {
+          originFile,
+          originLine,
+          originColumn,
+          ...(maxDepth !== undefined ? { maxDepth } : {}),
+          ...(interFunction ? { interFunction } : {}),
+          ...(limit ? { limit } : {}),
+          ...(excludeTests ? { excludeTests } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      emitResponse(response, pretty);
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
       console.error(
-        'Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses',
+        'Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses, flow-trace',
       );
       process.exit(2);
     }

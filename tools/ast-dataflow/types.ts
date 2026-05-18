@@ -33,12 +33,20 @@ export interface CallSiteResult extends BaseResult {
  *                     supply a more specific path.
  * - out_of_corpus   — the file is in the project but the named symbol is not
  *                     exported or declared there.
+ * - ORIGIN_NOT_RESOLVABLE — flow-trace: no AST node at the given (file, line,
+ *                     column), or the resolved node is not a
+ *                     VariableDeclaration, ParameterDeclaration, or
+ *                     BindingElement.
+ * - ORIGIN_NOT_VALUE_PRODUCING — flow-trace: the resolved node is a valid
+ *                     declaration kind but has no value (e.g. a type-only alias).
  */
 export type ErrorKind =
   | 'unknown_file'
   | 'parse_error'
   | 'ambiguous_symbol'
-  | 'out_of_corpus';
+  | 'out_of_corpus'
+  | 'ORIGIN_NOT_RESOLVABLE'
+  | 'ORIGIN_NOT_VALUE_PRODUCING';
 
 export interface QueryResponse<R extends BaseResult> {
   query: string;
@@ -421,4 +429,91 @@ export interface StringLiteralUseResult extends BaseResult {
   confidence: 'exact';
   kind: StringLiteralUseKind;
   enclosing: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// flow-trace query (ROADMAP R-WP6, flow-trace-TECH.md)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Hop classification for flow-trace.
+ *
+ * Real hop kinds (WP1 + WP2):
+ * - assignment  — value is bound to a new identifier.
+ * - destructure — value is unpacked from an object/array pattern.
+ * - argument    — value is passed as a function argument.
+ * - return      — value is returned from a function.
+ * - spread      — value is spread into an object or array literal.
+ * - mutation    — a mutating method is called on the value.
+ * - apiCall     — value flows into a known API call (Supabase, fetch, etc.).
+ * - write       — value is written to a file or external channel.
+ *
+ * Synthetic termination kinds (WP3):
+ * - cycleCutoff — emitted when the walker detects a visited position.
+ * - depthCutoff — emitted when the branch would exceed maxDepth.
+ */
+export type FlowTraceHopKind =
+  | 'assignment'
+  | 'destructure'
+  | 'argument'
+  | 'return'
+  | 'spread'
+  | 'mutation'
+  | 'apiCall'
+  | 'write'
+  | 'cycleCutoff'
+  | 'depthCutoff';
+
+/**
+ * Arguments for the flow-trace query.
+ */
+export interface FlowTraceArgs {
+  /** Repo-root-relative path to the file containing the origin node. */
+  originFile: string;
+  /** 1-based line number of the origin declaration. */
+  originLine: number;
+  /** 1-based column number of the origin declaration. */
+  originColumn: number;
+  /**
+   * Maximum number of hops per branch.
+   * Default: 8. Minimum: 1. Maximum: 20.
+   */
+  maxDepth?: number;
+  /**
+   * When true, on an `argument` hop the walk descends into the resolved
+   * callee's parameter and continues. Counts against maxDepth.
+   * Default: false (intra-function only).
+   */
+  interFunction?: boolean;
+  /** Maximum result rows (cap). Default: 200. */
+  limit?: number;
+  /** Exclude test files from the walk. Default: false. */
+  excludeTests?: boolean;
+}
+
+/**
+ * One result row for the flow-trace query.
+ *
+ * - hop         — 1-indexed hop number within the full trace (depth-first pre-order).
+ * - parentHop   — hop index of the upstream hop. Absent for hop 1 (origin row).
+ * - kind        — hop classification.
+ * - file        — repo-root-relative path.
+ * - line        — 1-based line of the hop node.
+ * - column      — 1-based column of the hop node.
+ * - confidence  — resolution confidence of this hop.
+ * - enclosing   — nearest enclosing function / method / 'module top-level'.
+ * - origin      — the origin declaration (same for every row in the trace).
+ */
+export interface FlowTraceRow extends BaseResult {
+  hop: number;
+  parentHop?: number;
+  kind: FlowTraceHopKind;
+  enclosing: string;
+  origin: {
+    file: string;
+    line: number;
+    column: number;
+    /** Identifier name at the origin site. */
+    symbol: string;
+  };
 }

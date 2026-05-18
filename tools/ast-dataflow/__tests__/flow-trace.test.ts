@@ -643,3 +643,224 @@ describe('flow-trace — indirect tier (dynamic property access)', () => {
     );
   });
 });
+
+// ---------------------------------------------------------------------------
+// WP3 Tests
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Test 10: Cycle detection (not maxDepth)
+// Fixture: 08-cycle.ts — let a = seed; let b = a; a = b; (re-assignment)
+// Walker detects cycle at step 3 because `a` position was already visited
+// (as origin). Emits cycleCutoff synthetic row.
+// Expected: 3 hops — origin (a), assignment (b=a), cycleCutoff.
+// ---------------------------------------------------------------------------
+describe('flow-trace — cycle detection', () => {
+  it('emits cycleCutoff synthetic row when a visited position would be re-traced', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '08-cycle.ts',
+        originLine: 17,
+        originColumn: 7,  // 'a' in `let a = seed`
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (a), hop 2 = assignment (b=a), hop 3 = cycleCutoff
+    expect(response.results).toHaveLength(3);
+
+    // hop 1: origin (a)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '08-cycle.ts',
+          line: 17,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'a' }),
+        }),
+      ]),
+    );
+
+    // hop 2: b = a — assignment hop
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'assignment',
+          file: '08-cycle.ts',
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+
+    // hop 3: cycleCutoff — detected when b's walk would re-visit position of a
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 3,
+          kind: 'cycleCutoff',
+          confidence: 'exact',
+          parentHop: 2,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 11: Max-depth cutoff (maxDepth=2, real chain=4)
+// Fixture: 09-depth-cutoff.ts — linear chain a → b → c → d
+// Invoked with maxDepth: 2; expects depthCutoff at hop 3.
+// Expected: 3 hops — origin (a), assignment (b=a), depthCutoff.
+// ---------------------------------------------------------------------------
+describe('flow-trace — depth cutoff', () => {
+  it('emits depthCutoff synthetic row when maxDepth is reached before the chain ends', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '09-depth-cutoff.ts',
+        originLine: 14,
+        originColumn: 9,
+        maxDepth: 2,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (a), hop 2 = b=a (depth 1), hop 3 = depthCutoff (depth 2)
+    expect(response.results).toHaveLength(3);
+
+    // hop 1: origin (a)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '09-depth-cutoff.ts',
+          line: 14,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'a' }),
+        }),
+      ]),
+    );
+
+    // hop 2: b = a — first real assignment at depth 1
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'assignment',
+          file: '09-depth-cutoff.ts',
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+
+    // hop 3: depthCutoff — fires at depth 2 (>= maxDepth 2) before emitting c=b
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 3,
+          kind: 'depthCutoff',
+          confidence: 'exact',
+          parentHop: 2,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 13: Inter-function descent (interFunction: true)
+// Fixture: 11-inter-function.ts — origin payload → argument at saveToDb(payload)
+//   → descent into saveToDb's parameter (data) → apiCall at .insert(data)
+// Expected: 4 hops — origin, argument (call site), argument (callee param), apiCall.
+// OQ-FT3 LOCK: enclosing on callee hops is saveToDb (callee), not processData (caller).
+// ---------------------------------------------------------------------------
+describe('flow-trace — inter-function descent', () => {
+  it('descends into callee on argument hop when interFunction:true; correct enclosing on child hops', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '11-inter-function.ts',
+        originLine: 30,
+        originColumn: 9,
+        interFunction: true,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (payload), hop 2 = argument at saveToDb(payload),
+    // hop 3 = argument (data param in saveToDb), hop 4 = apiCall at .insert(data)
+    expect(response.results).toHaveLength(4);
+
+    // hop 1: origin (payload) in processData
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '11-inter-function.ts',
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'payload' }),
+        }),
+      ]),
+    );
+
+    // hop 2: argument hop at saveToDb(payload) call site
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'argument',
+          file: '11-inter-function.ts',
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+
+    // hop 3: descent into saveToDb's parameter (data)
+    // OQ-FT3: enclosing is 'fn:saveToDb' (callee), not 'fn:processData' (caller)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 3,
+          kind: 'argument',
+          file: '11-inter-function.ts',
+          enclosing: 'fn:saveToDb',
+          parentHop: 2,
+        }),
+      ]),
+    );
+
+    // hop 4: apiCall sink at .insert(data) inside saveToDb
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 4,
+          kind: 'apiCall',
+          file: '11-inter-function.ts',
+          enclosing: 'fn:saveToDb',
+          parentHop: 3,
+        }),
+      ]),
+    );
+  });
+});
