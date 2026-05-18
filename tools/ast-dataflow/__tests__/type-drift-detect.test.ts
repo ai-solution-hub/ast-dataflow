@@ -275,7 +275,7 @@ describe('type-drift-detect — D-13: capped output', () => {
 
     expect(response.truncated).toBe(true);
     expect(response.results).toHaveLength(2);
-    expect(response.totalEstimated).toBeGreaterThan(2);
+    expect(response.totalEstimated).toBe(5);
   });
 
   it('does not truncate when results fit within --limit', async () => {
@@ -333,9 +333,10 @@ describe('type-drift-detect — D-25: no fetchers found', () => {
     });
     const response = await typeDriftDetect({}, project, repoRoot);
 
-    // Should still work — SomeResponse is classified (as route-only or unused)
-    // The key requirement is: no crash, no non-zero exit.
-    expect(response.error).toBeUndefined();
+    // Spec D-25: a single sentinel row with no-fetchers-found, no crash.
+    expect(response.results).toHaveLength(1);
+    expect(response.results[0].error?.kind).toBe('no-fetchers-found');
+    expect(response.results[0].error?.confidence).toBe('exact');
   });
 });
 
@@ -532,11 +533,20 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
       join(tmpDir, 'tsconfig.json'),
       JSON.stringify({
         compilerOptions: { target: 'ES2020', module: 'ESNext', moduleResolution: 'bundler', strict: true, baseUrl: '.', skipLibCheck: true },
-        include: ['types/**/*.ts'],
+        include: ['types/**/*.ts', 'lib/**/*.ts'],
       }),
     );
     mkdirSync(join(tmpDir, 'types'), { recursive: true });
     writeFileSync(join(tmpDir, 'types', 'r.ts'), `export interface SomeResponse { ok: boolean; }\n`);
+    // Provide a lib/query/fetchers.ts with a real fetchJson call so the
+    // no-fetchers-found branch does not fire before the allowlist is parsed.
+    mkdirSync(join(tmpDir, 'lib', 'query'), { recursive: true });
+    writeFileSync(
+      join(tmpDir, 'lib', 'query', 'fetchers.ts'),
+      `interface SomeResponse { ok: boolean; }\n` +
+        `async function fetchJson<T>(u: string): Promise<T> { return fetch(u).then(r=>r.json()) as Promise<T>; }\n` +
+        `export async function fetchSome() { return fetchJson<SomeResponse>('/api/some'); }\n`,
+    );
     // Write malformed allowlist
     mkdirSync(join(tmpDir, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline'), { recursive: true });
     writeFileSync(
@@ -556,8 +566,9 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
     });
     // Should NOT throw — structured error response instead
     const response = await typeDriftDetect({}, project, repoRoot);
-    // Either error field is set, or results are returned (allowlist ignored)
-    // The key invariant is: no exception thrown.
-    expect(response).toBeDefined();
+    // The key invariant: no exception thrown, AND the response carries a
+    // structured error indicating the allowlist was malformed (D-30).
+    expect(response.error).toBeDefined();
+    expect(response.error?.kind).toBe('parse_error');
   });
 });

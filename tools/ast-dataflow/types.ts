@@ -46,7 +46,8 @@ export type ErrorKind =
   | 'ambiguous_symbol'
   | 'out_of_corpus'
   | 'ORIGIN_NOT_RESOLVABLE'
-  | 'ORIGIN_NOT_VALUE_PRODUCING';
+  | 'ORIGIN_NOT_VALUE_PRODUCING'
+  | 'no-fetchers-found';
 
 export interface QueryResponse<R extends BaseResult> {
   query: string;
@@ -592,4 +593,6 @@ export interface TypeDriftResult extends BaseResult {
   testOnly?: boolean;
   /** Populated when the interface is in the allowlist. */
   allowlisted?: { reason: string };
+  /** Informational error attached to sentinel rows (e.g. no-fetchers-found). */
+  error?: { kind: ErrorKind; confidence: Confidence };
 }

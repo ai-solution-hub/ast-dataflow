@@ -52,7 +52,7 @@ interface AllowlistEntry {
 // ---------------------------------------------------------------------------
 // Allowlist loader
 // ---------------------------------------------------------------------------
-function loadAllowlist(repoRoot: string): AllowlistEntry[] {
+function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
   const path = join(
     repoRoot,
     'docs',
@@ -74,7 +74,7 @@ function loadAllowlist(repoRoot: string): AllowlistEntry[] {
         typeof e.reason === 'string',
     );
   } catch {
-    return null as unknown as AllowlistEntry[];
+    return null;
   }
 }
 
@@ -423,6 +423,45 @@ export async function typeDriftDetect(
   const allowlistReasons = new Map(
     allowlist.map((e) => [e.interface, e.reason]),
   );
+
+  // D-25: Check for absent or empty fetchers surface.
+  // If lib/query/fetchers.ts does not exist or contains zero fetchJson /
+  // mutationFetchJson calls, short-circuit and return a single informational row.
+  const fetchersPath = join(repoRoot, 'lib', 'query', 'fetchers.ts');
+  const fetchersSourceFile = project.getSourceFile(fetchersPath);
+  const hasFetcherCalls =
+    fetchersSourceFile !== undefined &&
+    fetchersSourceFile
+      .getDescendantsOfKind(SyntaxKind.CallExpression)
+      .some((call) => {
+        const exprText = call.getExpression().getText();
+        return exprText === 'fetchJson' || exprText === 'mutationFetchJson';
+      });
+
+  if (!hasFetcherCalls) {
+    return {
+      query: 'type-drift-detect',
+      args: { ...args, limit },
+      results: [
+        {
+          file: 'lib/query/fetchers.ts',
+          line: 1,
+          column: 1,
+          confidence: 'exact' as const,
+          interface: 'n/a',
+          declaredAt: { file: 'lib/query/fetchers.ts', line: 1, column: 1 },
+          classification: 'unused' as const,
+          fetchers: [],
+          routes: [],
+          candidateRoutes: [],
+          remediationHint: 'No fetcher calls found — lib/query/fetchers.ts is absent or contains no fetchJson/mutationFetchJson calls.',
+          error: { kind: 'no-fetchers-found' as const, confidence: 'exact' as const },
+        },
+      ],
+      truncated: false,
+      durationMs: Date.now() - started,
+    };
+  }
 
   // Enumerate candidates from type declarations
   const declaredCandidates = enumerateCandidates(
