@@ -251,12 +251,142 @@ function isDestructuringDeclaration(varDecl: Node): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Core walk — forward-only, intra-function scope (WP1)
+// Sink classification helpers (WP2)
+// ---------------------------------------------------------------------------
+
+/**
+ * Mutation method names that classify a call-on-receiver as a `mutation` sink.
+ *
+ * Decision (WP2): only Array/Map/Set mutating methods whose primary purpose is
+ * to modify the receiver in-place. We include the most common Array mutators
+ * plus Map/Set equivalents. `.sort()` and `.reverse()` are included because
+ * they mutate in-place even though they also return the array.
+ * Spec test 7 requires `.push` coverage as minimum; the rest are reasonable
+ * extensions that match the spec's example ("list.push(value)").
+ */
+const MUTATION_METHODS: ReadonlySet<string> = new Set([
+  'push',
+  'pop',
+  'shift',
+  'unshift',
+  'splice',
+  'sort',
+  'reverse',
+  'fill',
+  'copyWithin',
+  // Map / Set
+  'set',
+  'delete',
+  'add',
+  'clear',
+]);
+
+/**
+ * Supabase chain terminal mutating method names for `apiCall` sink detection.
+ *
+ * OQ-FT2 LOCK: the hop is emitted at the TERMINAL mutating call (e.g.
+ * `.insert()`), not at the chain root (`.from()`). This is consistent with
+ * `column-writes.ts` which records the mutation method, not `.from()`.
+ *
+ * `.select()` is excluded: it is a read terminal, not a mutation, and is
+ * typically non-terminal (e.g. `.insert({...}).select()` — here .select is
+ * a modifier, not the canonical sink).
+ *
+ * `fetch` and `axios` calls are detected separately (see FETCH_METHODS).
+ */
+const SUPABASE_SINK_METHODS: ReadonlySet<string> = new Set([
+  'insert',
+  'update',
+  'upsert',
+  'delete',
+  'rpc',
+]);
+
+/**
+ * File-system write function names for `write` sink detection.
+ * Scoped to the callee name (last segment of the member expression or
+ * bare identifier).
+ *
+ * We match only the function name, not the full chain, to avoid false-positive
+ * failures when the receiver is `fs`, `promises`, or a custom wrapper.
+ * Spec test 9 requires `writeFile` coverage as minimum.
+ */
+const FS_WRITE_METHODS: ReadonlySet<string> = new Set([
+  'writeFile',
+  'writeFileSync',
+  'appendFile',
+  'appendFileSync',
+]);
+
+/**
+ * Return the callee name (rightmost identifier) from a CallExpression.
+ * E.g. `fs.writeFile(...)` → 'writeFile'.
+ * Returns null if the expression is not a simple member or identifier access.
+ */
+function calleeMethodName(callExpr: import('ts-morph').CallExpression): string | null {
+  const expr = callExpr.getExpression();
+  if (expr.getKind() === SyntaxKind.PropertyAccessExpression) {
+    return (expr as import('ts-morph').PropertyAccessExpression).getName();
+  }
+  if (expr.getKind() === SyntaxKind.Identifier) {
+    return expr.getText();
+  }
+  return null;
+}
+
+/**
+ * Return true if `useNode` (an Identifier for the tracked name) is the
+ * receiver of a PropertyAccessExpression whose parent is a CallExpression
+ * with a known mutation method.
+ *
+ * Pattern: `list.push(4)` — useNode is `list`, parent is PropAccess `list.push`,
+ * grandparent is CallExpr `list.push(4)`, method is `push` ∈ MUTATION_METHODS.
+ */
+function isMutationReceiver(useNode: Node): import('ts-morph').CallExpression | null {
+  const parent = useNode.getParent();
+  if (!parent) return null;
+  if (parent.getKind() !== SyntaxKind.PropertyAccessExpression) return null;
+  const propAccess = parent as import('ts-morph').PropertyAccessExpression;
+  // useNode must be the object (expression) of the property access, not the name.
+  if (propAccess.getExpression().getStart() !== useNode.getStart()) return null;
+  const methodName = propAccess.getName();
+  if (!MUTATION_METHODS.has(methodName)) return null;
+  const grandParent = propAccess.getParent();
+  if (!grandParent || grandParent.getKind() !== SyntaxKind.CallExpression) return null;
+  // Confirm the property access is the callee of the call, not an argument.
+  const callExpr = grandParent as import('ts-morph').CallExpression;
+  if (callExpr.getExpression().getStart() !== propAccess.getStart()) return null;
+  return callExpr;
+}
+
+/**
+ * Return true if `callExpr` is a Supabase chain terminal mutating call
+ * (`.insert()`, `.update()`, `.upsert()`, `.delete()`, `.rpc()`).
+ *
+ * OQ-FT2: we check only the immediate method name; the value flowing into
+ * it is confirmed by the caller checking that `useNode` is an argument.
+ */
+function isSupabaseSinkCall(callExpr: import('ts-morph').CallExpression): boolean {
+  const name = calleeMethodName(callExpr);
+  return name !== null && SUPABASE_SINK_METHODS.has(name);
+}
+
+/**
+ * Return true if `callExpr` is a known file-system write call.
+ */
+function isFsWriteCall(callExpr: import('ts-morph').CallExpression): boolean {
+  const name = calleeMethodName(callExpr);
+  return name !== null && FS_WRITE_METHODS.has(name);
+}
+
+// ---------------------------------------------------------------------------
+// Core walk — forward-only, intra-function scope (WP1 + WP2 sinks)
 // ---------------------------------------------------------------------------
 
 /**
  * Walk forward from a binding `name` declared at `declNode`.
- * Handles: assignment, argument, return hops.
+ * Handles: assignment, argument, return hops (WP1).
+ * Also handles: spread, mutation, apiCall, write sinks; indirect tier (WP2).
  * Destructuring is handled by walkDestructuring (separate pass).
  */
 function walkForward(
@@ -285,8 +415,81 @@ function walkForward(
     const parentKind = parent.getKind();
 
     // -------------------------------------------------------------------
+    // Spread hop (WP2): value spread into an object or array literal.
+    // SpreadAssignment: `{ ...payload, extra }` (object literal)
+    // SpreadElement: `[ ...payload ]` (array literal)
+    // Both emit confidence 'wildcard' and are terminal (no further descent).
+    // -------------------------------------------------------------------
+    if (
+      parentKind === SyntaxKind.SpreadAssignment ||
+      parentKind === SyntaxKind.SpreadElement
+    ) {
+      const spreadNode = parent;
+      const spreadLineCol = sf.getLineAndColumnAtPos(spreadNode.getStart());
+      const key = visitedKey(relFile, spreadLineCol.line, spreadLineCol.column);
+      if (state.visited.has(key)) continue;
+
+      state.totalEstimated++;
+      const hopNum = ++state.hopCounter;
+      state.visited.add(key);
+
+      if (state.rows.length < state.limit) {
+        state.rows.push({
+          hop: hopNum,
+          parentHop: parentHopNumber,
+          kind: 'spread',
+          file: relFile,
+          line: spreadLineCol.line,
+          column: spreadLineCol.column,
+          confidence: 'wildcard',
+          enclosing: findEnclosing(spreadNode),
+          origin: state.origin,
+        });
+      }
+      // spread is terminal — no further descent.
+      continue;
+    }
+
+    // -------------------------------------------------------------------
+    // Mutation hop (WP2): identifier is receiver of a mutating method call.
+    // e.g. `list.push(4)` — `list` is the receiver of `.push()`.
+    // Terminal — no further descent.
+    // -------------------------------------------------------------------
+    if (parentKind === SyntaxKind.PropertyAccessExpression) {
+      const mutationCall = isMutationReceiver(useNode);
+      if (mutationCall) {
+        const callLineCol = sf.getLineAndColumnAtPos(mutationCall.getStart());
+        const key = visitedKey(relFile, callLineCol.line, callLineCol.column);
+        if (state.visited.has(key)) continue;
+
+        state.totalEstimated++;
+        const hopNum = ++state.hopCounter;
+        state.visited.add(key);
+
+        if (state.rows.length < state.limit) {
+          state.rows.push({
+            hop: hopNum,
+            parentHop: parentHopNumber,
+            kind: 'mutation',
+            file: relFile,
+            line: callLineCol.line,
+            column: callLineCol.column,
+            confidence: 'exact',
+            enclosing: findEnclosing(mutationCall),
+            origin: state.origin,
+          });
+        }
+        // mutation is terminal.
+        continue;
+      }
+      // Non-mutation property access: skip (e.g. `obj.id` — not a tracked hop).
+      continue;
+    }
+
+    // -------------------------------------------------------------------
     // Assignment hop: const b = a; (plain identifier assignment)
     // Skip if the parent VarDecl is a destructuring pattern.
+    // Also handles indirect tier: const val = obj[key] where key is dynamic.
     // -------------------------------------------------------------------
     if (parentKind === SyntaxKind.VariableDeclaration) {
       const varDecl = parent as import('ts-morph').VariableDeclaration;
@@ -328,8 +531,54 @@ function walkForward(
     }
 
     // -------------------------------------------------------------------
+    // Indirect tier (WP2): identifier is the receiver of a dynamic
+    // element access: `obj[key]` where key is not a string literal.
+    // The identifier appears as the expression of an ElementAccessExpression.
+    // Emit with confidence 'indirect'; do not descend further.
+    // -------------------------------------------------------------------
+    if (parentKind === SyntaxKind.ElementAccessExpression) {
+      const elemAccess = parent as import('ts-morph').ElementAccessExpression;
+      // useNode must be the receiver (expression), not the argument (key).
+      if (elemAccess.getExpression().getStart() !== useNode.getStart()) continue;
+      // Check whether the argument is a string literal (exact) or dynamic (indirect).
+      const argExpr = elemAccess.getArgumentExpression();
+      const isStaticKey = argExpr && argExpr.getKind() === SyntaxKind.StringLiteral;
+      if (isStaticKey) {
+        // Static key — this is a plain property read, not indirect.
+        // Treat as an assignment if the parent context is a VarDecl; skip otherwise.
+        continue;
+      }
+
+      // Dynamic key — emit indirect hop.
+      const accessLineCol = sf.getLineAndColumnAtPos(elemAccess.getStart());
+      const key = visitedKey(relFile, accessLineCol.line, accessLineCol.column);
+      if (state.visited.has(key)) continue;
+
+      state.totalEstimated++;
+      const hopNum = ++state.hopCounter;
+      state.visited.add(key);
+
+      if (state.rows.length < state.limit) {
+        state.rows.push({
+          hop: hopNum,
+          parentHop: parentHopNumber,
+          kind: 'assignment',
+          file: relFile,
+          line: accessLineCol.line,
+          column: accessLineCol.column,
+          confidence: 'indirect',
+          enclosing: findEnclosing(elemAccess),
+          origin: state.origin,
+        });
+      }
+      // indirect is terminal — no further descent.
+      continue;
+    }
+
+    // -------------------------------------------------------------------
     // Argument hop: doSomething(value)
     // The identifier is a direct call argument.
+    // WP2 checks for apiCall / write sinks BEFORE emitting a generic argument hop.
     // -------------------------------------------------------------------
     if (parentKind === SyntaxKind.CallExpression) {
       const callExpr = parent as import('ts-morph').CallExpression;
@@ -340,6 +589,55 @@ function walkForward(
       const key = visitedKey(relFile, callLineCol.line, callLineCol.column);
       if (state.visited.has(key)) continue;
 
+      // --- apiCall sink (WP2) ---
+      // OQ-FT2: hop emitted at the terminal mutating call (e.g. .insert()),
+      // which is the CallExpression that directly receives the identifier as argument.
+      if (isSupabaseSinkCall(callExpr)) {
+        state.totalEstimated++;
+        const hopNum = ++state.hopCounter;
+        state.visited.add(key);
+
+        if (state.rows.length < state.limit) {
+          state.rows.push({
+            hop: hopNum,
+            parentHop: parentHopNumber,
+            kind: 'apiCall',
+            file: relFile,
+            line: callLineCol.line,
+            column: callLineCol.column,
+            confidence: 'exact',
+            enclosing: findEnclosing(callExpr),
+            origin: state.origin,
+          });
+        }
+        // apiCall is terminal.
+        continue;
+      }
+
+      // --- write sink (WP2) ---
+      if (isFsWriteCall(callExpr)) {
+        state.totalEstimated++;
+        const hopNum = ++state.hopCounter;
+        state.visited.add(key);
+
+        if (state.rows.length < state.limit) {
+          state.rows.push({
+            hop: hopNum,
+            parentHop: parentHopNumber,
+            kind: 'write',
+            file: relFile,
+            line: callLineCol.line,
+            column: callLineCol.column,
+            confidence: 'exact',
+            enclosing: findEnclosing(callExpr),
+            origin: state.origin,
+          });
+        }
+        // write is terminal.
+        continue;
+      }
+
+      // --- generic argument hop ---
       state.totalEstimated++;
       const hopNum = ++state.hopCounter;
       state.visited.add(key);

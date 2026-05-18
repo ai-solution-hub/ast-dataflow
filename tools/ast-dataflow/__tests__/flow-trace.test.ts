@@ -372,3 +372,273 @@ describe('flow-trace — truncation at row cap', () => {
     expect(response.totalEstimated).toBe(3);
   });
 });
+
+// ---------------------------------------------------------------------------
+// WP2 Tests
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Test 4: Spread (wildcard hop)
+// Fixture: 03-spread.ts — { ...payload } in an object literal
+// Expected: 2 hops (origin payload, spread), confidence wildcard on hop 2,
+// no further descent from spread (unresolvable target identity).
+// ---------------------------------------------------------------------------
+describe('flow-trace — spread hop (wildcard confidence)', () => {
+  it('emits origin row + one spread hop with wildcard confidence; no further descent', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '03-spread.ts',
+        originLine: 6,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (payload), hop 2 = spread into merged — no further descent
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (payload)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '03-spread.ts',
+          line: 6,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'payload' }),
+        }),
+      ]),
+    );
+
+    // hop 2: { ...payload } — spread hop with wildcard confidence
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'spread',
+          file: '03-spread.ts',
+          confidence: 'wildcard',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 7: Mutation sink (.push)
+// Fixture: 05-mutation.ts — list.push(4)
+// Expected: 2 hops (origin list, mutation), mutation hop is terminal.
+// ---------------------------------------------------------------------------
+describe('flow-trace — mutation sink (.push)', () => {
+  it('emits origin row + one mutation hop; walk terminates at mutation', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '05-mutation.ts',
+        originLine: 6,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (list), hop 2 = list.push(4) — terminal
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (list)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '05-mutation.ts',
+          line: 6,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'list' }),
+        }),
+      ]),
+    );
+
+    // hop 2: list.push(4) — mutation hop (terminal)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'mutation',
+          file: '05-mutation.ts',
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 8: apiCall sink (Supabase chain terminal method)
+// Fixture: 06-api-call.ts — supabase.from('items').insert(payload)
+// Expected: 2 hops (origin payload, apiCall at .insert()). OQ-FT2 LOCK:
+// apiCall hop emitted at terminal mutating call (.insert), NOT at .from().
+// ---------------------------------------------------------------------------
+describe('flow-trace — apiCall sink (Supabase .insert)', () => {
+  it('emits origin row + one apiCall hop at the terminal mutating method (.insert)', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '06-api-call.ts',
+        originLine: 13,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (payload), hop 2 = .insert(payload) apiCall — terminal
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (payload)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '06-api-call.ts',
+          line: 13,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'payload' }),
+        }),
+      ]),
+    );
+
+    // hop 2: .insert(payload) — apiCall hop at terminal call (OQ-FT2 lock)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'apiCall',
+          file: '06-api-call.ts',
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 9: Write sink (fs.writeFile)
+// Fixture: 07-write.ts — fs.writeFile(path, content)
+// Expected: 2 hops (origin content, write), write hop is terminal.
+// ---------------------------------------------------------------------------
+describe('flow-trace — write sink (fs.writeFile)', () => {
+  it('emits origin row + one write hop at fs.writeFile call; walk terminates', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '07-write.ts',
+        originLine: 8,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (content), hop 2 = fs.writeFile call — terminal
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (content)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '07-write.ts',
+          line: 8,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'content' }),
+        }),
+      ]),
+    );
+
+    // hop 2: fs.writeFile(path, content) — write hop (terminal)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          kind: 'write',
+          file: '07-write.ts',
+          confidence: 'exact',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Test 12: Indirect tier (dynamic property access)
+// Fixture: 10-indirect.ts — const val = obj[key]
+// Expected: 2 hops (origin obj, indirect-confidence hop). No further descent.
+// ---------------------------------------------------------------------------
+describe('flow-trace — indirect tier (dynamic property access)', () => {
+  it('emits origin row + one hop with indirect confidence for obj[key]; no further descent', async () => {
+    const { project, repoRoot } = makeProject();
+
+    const response = await flowTrace(
+      {
+        originFile: '10-indirect.ts',
+        originLine: 6,
+        originColumn: 9,
+      },
+      project,
+      repoRoot,
+    );
+
+    expect(response.query).toBe('flow-trace');
+    expect(response.error).toBeUndefined();
+    // hop 1 = origin (obj), hop 2 = val = obj[key] — indirect, terminal
+    expect(response.results).toHaveLength(2);
+
+    // hop 1: origin (obj)
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 1,
+          kind: 'assignment',
+          file: '10-indirect.ts',
+          line: 6,
+          confidence: 'exact',
+          origin: expect.objectContaining({ symbol: 'obj' }),
+        }),
+      ]),
+    );
+
+    // hop 2: val = obj[key] — indirect confidence (dynamic access), terminal
+    expect(response.results).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          hop: 2,
+          confidence: 'indirect',
+          file: '10-indirect.ts',
+          parentHop: 1,
+        }),
+      ]),
+    );
+  });
+});
