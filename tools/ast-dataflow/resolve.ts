@@ -298,7 +298,12 @@ export interface BarrelWalkResult {
  * Single source of truth — column-reads.ts and column-writes.ts import from
  * here rather than maintaining their own copies.
  */
-const TEST_DIR_PREFIXES = ['__tests__/', 'src/__tests__/'];
+const TEST_DIR_PREFIXES = [
+  '__tests__/',
+  'src/__tests__/',
+  'scripts/mcp-eval/',
+  'e2e/fixtures/',
+];
 const TEST_SUFFIX_PATTERNS = [
   '.test.ts',
   '.test.tsx',
