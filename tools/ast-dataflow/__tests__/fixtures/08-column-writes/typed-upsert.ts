@@ -24,7 +24,10 @@ const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 async function upsertQuestion(procurementId: string, text: string) {
   const { data } = await sb
     .from('bid_questions')
-    .upsert({ project_id: procurementId, question_text: text }, { onConflict: 'id' })
+    .upsert(
+      { project_id: procurementId, question_text: text },
+      { onConflict: 'id' },
+    )
     .select('id')
     .single();
   return data;
@@ -34,7 +37,9 @@ async function upsertQuestion(procurementId: string, text: string) {
 async function upsertArrayQuestion(procurementId: string, text: string) {
   const { data } = await sb
     .from('bid_questions')
-    .upsert([{ project_id: procurementId, question_text: text }], { onConflict: 'id' })
+    .upsert([{ project_id: procurementId, question_text: text }], {
+      onConflict: 'id',
+    })
     .select('id')
     .single();
   return data;
