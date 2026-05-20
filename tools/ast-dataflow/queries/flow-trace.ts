@@ -823,12 +823,12 @@ function walkForward(
     }
 
     // -------------------------------------------------------------------
-    // Nested object-literal argument hop (Wave 5 bidIds fix):
+    // Nested object-literal argument hop (Wave 5 procurementIds fix):
     // value passed as a property inside an object literal argument.
     //
     // Two patterns handled:
-    //   PropertyAssignment:         rpc('fn', { p_project_ids: bidIds })
-    //   ShorthandPropertyAssignment: rpc('fn', { bidIds })
+    //   PropertyAssignment:         rpc('fn', { p_project_ids: procurementIds })
+    //   ShorthandPropertyAssignment: rpc('fn', { procurementIds })
     //
     // Chain to detect:
     //   Identifier → PropertyAssignment/ShorthandPropertyAssignment

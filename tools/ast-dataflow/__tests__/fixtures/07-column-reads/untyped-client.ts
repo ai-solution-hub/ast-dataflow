@@ -6,7 +6,7 @@ import { createClient } from './supabase-stub.js';
 
 const sb = createClient('https://example.supabase.co', 'anon-key');
 
-async function fetchQuestionsUntyped(bidId: string) {
+async function fetchQuestionsUntyped(procurementId: string) {
   const { data: bySelect } = await sb
     .from('bid_questions')
     .select('project_id, question_text')
@@ -15,7 +15,7 @@ async function fetchQuestionsUntyped(bidId: string) {
   const { data: byEq } = await sb
     .from('bid_questions')
     .select('question_text')
-    .eq('project_id', bidId)
+    .eq('project_id', procurementId)
     .single();
 
   return { bySelect, byEq };

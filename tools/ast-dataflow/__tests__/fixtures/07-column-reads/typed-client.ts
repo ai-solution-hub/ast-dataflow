@@ -16,7 +16,7 @@ type Database = {
 
 const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 
-async function fetchQuestions(bidId: string) {
+async function fetchQuestions(procurementId: string) {
   const { data: bySelect } = await sb
     .from('bid_questions')
     .select('project_id, question_text')
@@ -25,7 +25,7 @@ async function fetchQuestions(bidId: string) {
   const { data: byEq } = await sb
     .from('bid_questions')
     .select('question_text')
-    .eq('project_id', bidId)
+    .eq('project_id', procurementId)
     .single();
 
   return { bySelect, byEq };

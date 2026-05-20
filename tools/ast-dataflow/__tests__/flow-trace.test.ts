@@ -646,7 +646,7 @@ describe('flow-trace — indirect tier (dynamic property access)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Wave 5 Tests — bidIds nested-arg fix
+// Wave 5 Tests — procurementIds nested-arg fix
 // ---------------------------------------------------------------------------
 
 function makeNestedArgProject() {
@@ -659,8 +659,8 @@ function makeNestedArgProject() {
 // ---------------------------------------------------------------------------
 // Test 17b-1: Nested object-literal property (PropertyAssignment)
 // Fixture: 01-nested-property-arg.ts
-// Pattern: rpc('fn', { p_project_ids: bidIds })
-// Origin: const bidIds at line 14, col 9
+// Pattern: rpc('fn', { p_project_ids: procurementIds })
+// Origin: const procurementIds at line 14, col 9
 // Expected: 2 hops — origin (assignment) + argument hop at the rpc() call site
 // Hop kind: 'argument' (value flows as a call argument via object literal property)
 // Confidence: 'exact' (static key, statically-known call)
@@ -684,7 +684,7 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
     // Exactly 2 hops: origin + the argument hop at the rpc() call site
     expect(response.results).toHaveLength(2);
 
-    // hop 1: origin (bidIds declaration)
+    // hop 1: origin (procurementIds declaration)
     expect(response.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -693,12 +693,12 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
           file: '01-nested-property-arg.ts',
           line: 14,
           confidence: 'exact',
-          origin: expect.objectContaining({ symbol: 'bidIds' }),
+          origin: expect.objectContaining({ symbol: 'procurementIds' }),
         }),
       ]),
     );
 
-    // hop 2: rpc('get_bid_question_stats_batch', { p_project_ids: bidIds }) call
+    // hop 2: rpc('get_bid_question_stats_batch', { p_project_ids: procurementIds }) call
     // The walker must detect the PropertyAssignment → ObjectLiteralExpression →
     // CallExpression chain and classify the hop as 'argument'.
     expect(response.results).toEqual(
@@ -719,8 +719,8 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
 // ---------------------------------------------------------------------------
 // Test 17b-2: Shorthand property argument (ShorthandPropertyAssignment)
 // Fixture: 02-shorthand-property-arg.ts
-// Pattern: rpc('fn', { bidIds }) — shorthand for { bidIds: bidIds }
-// Origin: const bidIds at line 14, col 9
+// Pattern: rpc('fn', { procurementIds }) — shorthand for { procurementIds: procurementIds }
+// Origin: const procurementIds at line 14, col 9
 // Expected: 2 hops — origin (assignment) + argument hop at the rpc() call site
 // Hop kind: 'argument', Confidence: 'exact'
 // ---------------------------------------------------------------------------
@@ -743,7 +743,7 @@ describe('flow-trace — shorthand property argument (ShorthandPropertyAssignmen
     // Exactly 2 hops: origin + the argument hop at the rpc() call site
     expect(response.results).toHaveLength(2);
 
-    // hop 1: origin (bidIds declaration)
+    // hop 1: origin (procurementIds declaration)
     expect(response.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -752,12 +752,12 @@ describe('flow-trace — shorthand property argument (ShorthandPropertyAssignmen
           file: '02-shorthand-property-arg.ts',
           line: 14,
           confidence: 'exact',
-          origin: expect.objectContaining({ symbol: 'bidIds' }),
+          origin: expect.objectContaining({ symbol: 'procurementIds' }),
         }),
       ]),
     );
 
-    // hop 2: rpc('get_bid_question_stats_batch', { bidIds }) call
+    // hop 2: rpc('get_bid_question_stats_batch', { procurementIds }) call
     // The walker must detect the ShorthandPropertyAssignment → ObjectLiteralExpression →
     // CallExpression chain and classify the hop as 'argument'.
     expect(response.results).toEqual(

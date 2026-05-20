@@ -241,7 +241,7 @@ export type TypeEvolutionKind =
   | 'destructuring';
 
 export interface TypeEvolutionArgs {
-  /** The TypeScript type / interface name to probe. E.g. `'BidQuestion'`. */
+  /** The TypeScript type / interface name to probe. E.g. `'ProcurementQuestion'`. */
   type: string;
   /** The property name to probe within that type. E.g. `'project_id'`. */
   property: string;

@@ -47,7 +47,7 @@ describe('column-reads query — typed client', () => {
     const eqHits = response.results.filter(
       (r) => r.file === 'typed-client.ts' && r.method === 'eq',
     );
-    // typed-client.ts line 25: .eq('project_id', bidId)
+    // typed-client.ts line 25: .eq('project_id', procurementId)
     expect(eqHits).toHaveLength(1);
     expect(eqHits[0]).toMatchObject({
       isTyped: true,
@@ -95,7 +95,7 @@ describe('column-reads query — untyped client', () => {
     const eqHits = response.results.filter(
       (r) => r.file === 'untyped-client.ts' && r.method === 'eq',
     );
-    // untyped-client.ts line 15: .eq('project_id', bidId)
+    // untyped-client.ts line 15: .eq('project_id', procurementId)
     expect(eqHits).toHaveLength(1);
     expect(eqHits[0]).toMatchObject({
       isTyped: false,

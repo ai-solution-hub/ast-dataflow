@@ -104,7 +104,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              "bun run ast-dataflow references --symbol 'types/bid.ts:BidState'",
+              "bun run ast-dataflow references --symbol 'types/bid.ts:ProcurementWorkflowState'",
           },
           {
             name: 'column-reads',
@@ -141,7 +141,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id',
+              'bun scripts/ast-dataflow-cli.ts type-evolution --type ProcurementQuestion --property project_id',
           },
           {
             name: 'dead-exports',
@@ -213,7 +213,7 @@ function printCatalogue(): void {
               '[--json | --pretty]',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/bid/bid-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
+              'bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
           },
         ],
         notes:
@@ -394,7 +394,7 @@ async function main(): Promise<void> {
       if (typeof symbol !== 'string') {
         console.error('references requires --symbol <file:name>');
         console.error(
-          "Example: bun run ast-dataflow references --symbol 'types/bid.ts:BidState'",
+          "Example: bun run ast-dataflow references --symbol 'types/bid.ts:ProcurementWorkflowState'",
         );
         process.exit(2);
       }
@@ -504,14 +504,14 @@ async function main(): Promise<void> {
       if (typeof typeName !== 'string' || !typeName) {
         console.error('type-evolution requires --type <TypeName>');
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id',
+          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type ProcurementQuestion --property project_id',
         );
         process.exit(2);
       }
       if (typeof property !== 'string' || !property) {
         console.error('type-evolution requires --property <propertyName>');
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type BidQuestion --property project_id',
+          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type ProcurementQuestion --property project_id',
         );
         process.exit(2);
       }
@@ -662,7 +662,7 @@ async function main(): Promise<void> {
           'flow-trace requires --origin-file <repo-root-relative-path>',
         );
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/bid/bid-queries.ts --origin-line 42 --origin-column 9',
+          'Example: bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9',
         );
         process.exit(2);
       }
