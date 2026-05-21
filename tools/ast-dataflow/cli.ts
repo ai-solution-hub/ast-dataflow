@@ -92,7 +92,7 @@ function printCatalogue(): void {
             name: 'importers',
             args: ['--module <module-path>', '--limit N', '--json', '--pretty'],
             example:
-              "bun run ast-dataflow importers --module '@/lib/ai/digest'",
+              "bun run ast-dataflow importers --module '@/lib/ai/change-reports'",
           },
           {
             name: 'references',
@@ -371,7 +371,7 @@ async function main(): Promise<void> {
       if (typeof modulePath !== 'string') {
         console.error('importers requires --module <module-path>');
         console.error(
-          "Example: bun run ast-dataflow importers --module '@/lib/ai/digest'",
+          "Example: bun run ast-dataflow importers --module '@/lib/ai/change-reports'",
         );
         process.exit(2);
       }
