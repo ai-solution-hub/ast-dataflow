@@ -53,7 +53,7 @@ function extractAliasPrefixes(project: Project): string[] {
  * which alias convention the project uses.
  *
  * Examples (with KH aliases `@/` and a Vite project alias `~/`):
- *   '@/lib/ai/digest'   → 'lib/ai/digest'
+ *   '@/lib/ai/change-reports'   → 'lib/ai/change-reports'
  *   '~/utils/format'    → 'utils/format'
  *   'src/utils/format'  → 'src/utils/format'  (no prefix to strip)
  */
@@ -73,8 +73,8 @@ function stripAliasPrefix(specifier: string, aliasPrefixes: string[]): string {
  * Strategy: walk every source file's import declarations. The first one whose
  * getModuleSpecifierSourceFile() returns a SourceFile, and whose specifier
  * value matches the input (or whose resolved file path ends with a normalised
- * form of the input), is our target. This way both '@/lib/ai/digest' and
- * '../../lib/ai/digest' resolve to the same SourceFile without re-implementing
+ * form of the input), is our target. This way both '@/lib/ai/change-reports' and
+ * '../../lib/ai/change-reports' resolve to the same SourceFile without re-implementing
  * the compiler's module resolver.
  *
  * The alias strip uses the tsconfig `compilerOptions.paths` to discover which
@@ -203,7 +203,7 @@ export async function importers(
       { ...args },
       'parse_error',
       'modulePath must be a non-empty string.',
-      "Example: '@/lib/ai/digest' or 'lib/ai/digest.ts'.",
+      "Example: '@/lib/ai/change-reports' or 'lib/ai/change-reports.ts'.",
       Date.now() - started,
     );
   }

@@ -71,7 +71,7 @@ export interface CallersArgs {
 }
 
 export interface ImportersArgs {
-  modulePath: string; // '@/lib/ai/digest' or 'lib/ai/digest.ts'
+  modulePath: string; // '@/lib/ai/change-reports' or 'lib/ai/change-reports.ts'
   limit?: number; // default 200
 }
 
