@@ -217,7 +217,9 @@ export function findEnclosing(node: Node): string {
       }
       case SyntaxKind.PropertyAssignment: {
         // Arrow function or expression assigned as object property: { foo: () => ... }
-        const propName = (current as { getName: () => string }).getName();
+        const propName = current
+          .asKindOrThrow(SyntaxKind.PropertyAssignment)
+          .getName();
         const objLiteral = current.getParent();
         const containerName = objLiteral
           ? resolveObjectLiteralContainerName(objLiteral)

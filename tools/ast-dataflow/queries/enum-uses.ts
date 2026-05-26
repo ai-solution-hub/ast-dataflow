@@ -1,4 +1,4 @@
-import { Project, SyntaxKind, type Node } from 'ts-morph';
+import { Project, SyntaxKind, type Node, type SourceFile } from 'ts-morph';
 import type {
   EnumUsesArgs,
   EnumUseKind,
@@ -43,7 +43,7 @@ function isTypePosition(node: Node): boolean {
  */
 function findEnumDeclarations(project: Project, enumName: string) {
   const results: {
-    sf: ReturnType<typeof project.getSourceFile>;
+    sf: SourceFile;
     node: Node;
   }[] = [];
 
@@ -182,12 +182,9 @@ export async function enumUses(
         let kind: EnumUseKind;
         let memberName: string | null = null;
 
-        if (parent?.getKind() === SyntaxKind.PropertyAccessExpression) {
+        const propAccess = parent?.asKind(SyntaxKind.PropertyAccessExpression);
+        if (propAccess) {
           // Member access: E.MEMBER — node is the left-side (enum identifier)
-          const propAccess = parent as {
-            getExpression: () => Node;
-            getName: () => string;
-          };
           if (propAccess.getExpression() === node) {
             kind = 'memberAccess';
             memberName = propAccess.getName();

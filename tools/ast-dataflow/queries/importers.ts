@@ -1,5 +1,5 @@
 import { relative, resolve, isAbsolute } from 'node:path';
-import { type Project, SyntaxKind } from 'ts-morph';
+import { Node, type Project, SyntaxKind } from 'ts-morph';
 import type {
   ImportersArgs,
   ImporterResult,
@@ -171,6 +171,13 @@ function isImportUnused(
     // original name. E.g. `import { foo as bar }` → local name is `bar`.
     const aliasNode = ni.getAliasNode();
     const localName = aliasNode ?? ni.getNameNode();
+
+    // The local binding is reference-findable only when it is an Identifier;
+    // a string-literal import name with no alias has no usage binding to
+    // search for, so treat it as having no body references.
+    if (!Node.isReferenceFindable(localName)) {
+      continue;
+    }
     const refs = localName.findReferencesAsNodes();
 
     // Filter to refs that are:

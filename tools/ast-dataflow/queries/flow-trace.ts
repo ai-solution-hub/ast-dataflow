@@ -1,5 +1,5 @@
 import { resolve } from 'node:path';
-import { Project, SyntaxKind, type Node, type SourceFile } from 'ts-morph';
+import { Node, Project, SyntaxKind, type SourceFile } from 'ts-morph';
 import type {
   QueryResponse,
   FlowTraceHopKind,
@@ -120,12 +120,11 @@ function resolveOrigin(
     };
   }
 
-  // Extract the symbol name.
+  // Extract the symbol name. Not every node exposes getName(); narrow with the
+  // ts-morph Node.hasName type guard before calling it.
   let symbol = '<unknown>';
-  try {
-    symbol = (current as { getName: () => string }).getName();
-  } catch {
-    // getName() not available — leave as '<unknown>'
+  if (Node.hasName(current)) {
+    symbol = current.getName();
   }
 
   return { ok: true, node: current, sf, symbol };
@@ -383,32 +382,23 @@ function descendIntoCallee(
 
   if (!isFunctionLike) return;
 
-  // Check that the callee has a body (not just a signature).
+  // Check that the callee has a body (not just a signature). Node.isBodyable
+  // narrows to a node exposing getBody() without an unsafe cast.
   let hasBody = false;
   try {
-    hasBody = !!(
-      calleeDecl as
-        | FunctionDeclaration
-        | FunctionExpression
-        | ArrowFunction
-        | MethodDeclaration
-    ).getBody?.();
+    hasBody = Node.isBodyable(calleeDecl) && !!calleeDecl.getBody();
   } catch {
     return;
   }
   if (!hasBody) return;
 
-  // Get the matching ParameterDeclaration by index.
+  // Get the matching ParameterDeclaration by index. Node.isParametered narrows
+  // to a node exposing getParameters() without an unsafe cast.
   let paramDecl: Node | undefined;
   try {
-    const params =
-      (
-        calleeDecl as
-          | FunctionDeclaration
-          | FunctionExpression
-          | ArrowFunction
-          | MethodDeclaration
-      ).getParameters?.() ?? [];
+    const params = Node.isParametered(calleeDecl)
+      ? calleeDecl.getParameters()
+      : [];
     paramDecl = params[argIndex];
   } catch {
     return;

@@ -76,11 +76,9 @@ function classifyTypeRefKind(node: Node): TypeEvolutionKind | null {
   // In ts-morph, Array<TargetType> has the structure:
   //   TypeReference(Array<TargetType>)
   //     └─ TypeReference(TargetType)   ← our node's parent
-  // There is no explicit TypeArguments wrapper node in this representation.
+  // There is no explicit TypeArguments wrapper node in this representation,
+  // so generic position is detected purely via the nested-TypeReference rule.
   for (const ancestor of ancestors) {
-    if (ancestor.getKind() === SyntaxKind.TypeArguments) {
-      return 'generic';
-    }
     // Detect nested TypeReference inside another TypeReference
     if (ancestor.getKind() === SyntaxKind.TypeReference) {
       const typeRefParent = ancestor.getParent();
@@ -149,9 +147,9 @@ function isTypeOnlyPosition(node: Node): boolean {
   const importDecl = node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration);
   if (importDecl?.isTypeOnly()) return true;
 
-  // Inside a type annotation (TypeReference, TypeArguments, etc.)
+  // Inside a type annotation. Type arguments (e.g. Array<X>) are themselves
+  // nested under a TypeReference ancestor, so the single check covers them.
   if (node.getFirstAncestorByKind(SyntaxKind.TypeReference)) return true;
-  if (node.getFirstAncestorByKind(SyntaxKind.TypeArguments)) return true;
 
   // SatisfiesExpression — only the type part is type-only
   const satisfies = node.getFirstAncestorByKind(SyntaxKind.SatisfiesExpression);

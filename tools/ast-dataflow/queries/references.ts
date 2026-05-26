@@ -81,12 +81,8 @@ function classifyKind(node: Node): ReferenceKind {
 
   // Rule 5: LHS of a BinaryExpression (assignment)
   if (parent) {
-    const parentKind = parent.getKind();
-    if (parentKind === SyntaxKind.BinaryExpression) {
-      const binExpr = parent as {
-        getLeft: () => Node;
-        getOperatorToken: () => Node;
-      };
+    const binExpr = parent.asKind(SyntaxKind.BinaryExpression);
+    if (binExpr) {
       const left = binExpr.getLeft();
       if (left === node || left.getStart() === node.getStart()) {
         // Check it's an assignment operator
@@ -154,7 +150,9 @@ export async function references(
     for (const ref of refSym.getReferences()) {
       const node = ref.getNode();
       const sf = node.getSourceFile();
-      const isDefinition = ref.isDefinition();
+      // isDefinition() is typed boolean | undefined; absent means "not a
+      // definition site", so default undefined to false.
+      const isDefinition = ref.isDefinition() ?? false;
 
       const kind = classifyKind(node);
 
