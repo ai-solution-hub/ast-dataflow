@@ -57,7 +57,7 @@ function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
     repoRoot,
     'docs',
     'specs',
-    'ast-dataflow-tool',
+    'id-16-ast-dataflow-tool',
     'type-safety-pipeline',
     'allowlist.json',
   );
@@ -770,7 +770,7 @@ export async function typeDriftDetect(
           error: {
             kind: 'parse_error' as const,
             message: 'Allowlist JSON is malformed — allowlist ignored.',
-            hint: `Fix ${join(repoRoot, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json')}`,
+            hint: `Fix ${join(repoRoot, 'docs', 'specs', 'id-16-ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json')}`,
           },
         }
       : {}),
