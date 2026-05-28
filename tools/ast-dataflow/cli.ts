@@ -217,7 +217,7 @@ function printCatalogue(): void {
           },
         ],
         notes:
-          'S9 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + flow-trace + type-drift-detect queries are wired. See docs/specs/ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'S9 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + flow-trace + type-drift-detect queries are wired. See docs/specs/id-16-ast-dataflow-tool/PRODUCT.md for the full surface.',
       },
       null,
       2,
