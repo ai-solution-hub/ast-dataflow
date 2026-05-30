@@ -15,7 +15,12 @@ import {
   typeDriftDetect,
   createProject,
 } from '../lib/ast-dataflow';
-import type { ReferenceKind, TypeDriftResult } from '../lib/ast-dataflow';
+import type {
+  BaseResult,
+  QueryResponse,
+  ReferenceKind,
+  TypeDriftResult,
+} from '../lib/ast-dataflow';
 
 interface ParsedArgs {
   query: string | undefined;
@@ -61,11 +66,8 @@ const REFERENCE_KINDS: ReferenceKind[] = [
  * - The full JSON envelope is always emitted so downstream tools can branch on
  *   `error.kind` without parsing stderr.
  */
-function emitResponse(
-  response: {
-    error?: { kind: string; message: string; hint?: string };
-    [k: string]: unknown;
-  },
+function emitResponse<R extends BaseResult>(
+  response: QueryResponse<R>,
   pretty: boolean,
 ): void {
   if (pretty && response.error) {
