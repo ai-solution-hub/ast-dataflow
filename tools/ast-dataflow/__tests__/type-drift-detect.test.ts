@@ -475,15 +475,17 @@ describe('type-drift-detect — D-21: --ci does not mutate baseline', () => {
         `async function fetchJson<T>(u: string): Promise<T> { return fetch(u).then(r=>r.json()) as Promise<T>; }\n` +
         `export async function fetchCi() { return fetchJson<CiTestResponse>('/api/ci'); }\n`,
     );
-    // Write a baseline that already accepts CiTestResponse
-    mkdirSync(join(tmpDir, 'docs', 'generated'), { recursive: true });
+    // Write a baseline that already accepts CiTestResponse. The detector
+    // resolves the fetchJson<CiTestResponse> type argument to the local
+    // declaration in lib/query/fetchers.ts, so the baseline entry must key
+    // on that file (interface:declaredAt.file pairing) to genuinely match.
     baselineContent = JSON.stringify([
-      { interface: 'CiTestResponse', declaredAt: { file: 'types/r.ts' } },
+      {
+        interface: 'CiTestResponse',
+        declaredAt: { file: 'lib/query/fetchers.ts' },
+      },
     ]);
-    writeFileSync(
-      join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'),
-      baselineContent,
-    );
+    writeFileSync(join(tmpDir, '.type-drift-baseline.json'), baselineContent);
   });
 
   afterEach(() => {
@@ -496,10 +498,16 @@ describe('type-drift-detect — D-21: --ci does not mutate baseline', () => {
       tsConfigFilePath: join(tmpDir, 'tsconfig.json'),
       repoRoot: tmpDir,
     });
-    await typeDriftDetect({ ci: true }, project, repoRoot);
+    const response = await typeDriftDetect({ ci: true }, project, repoRoot);
+
+    // The repo-root dotfile baseline is genuinely read: CiTestResponse is
+    // accepted debt, so it must NOT be flagged as new since baseline.
+    expect(
+      (response as { newSinceBaseline?: string[] }).newSinceBaseline ?? [],
+    ).not.toContain('CiTestResponse');
 
     const afterContent = readFileSync(
-      join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'),
+      join(tmpDir, '.type-drift-baseline.json'),
       'utf8',
     );
     expect(afterContent).toBe(baselineContent);
@@ -542,11 +550,7 @@ describe('type-drift-detect — D-19: --ci mode exits non-zero on new rows', () 
         `export async function fetchNew() { return fetchJson<NewResponse>('/api/new'); }\n`,
     );
     // Empty baseline — NewResponse is NOT in it
-    mkdirSync(join(tmpDir, 'docs', 'generated'), { recursive: true });
-    writeFileSync(
-      join(tmpDir, 'docs', 'generated', 'type-drift-baseline.json'),
-      '[]',
-    );
+    writeFileSync(join(tmpDir, '.type-drift-baseline.json'), '[]');
   });
 
   afterEach(() => {

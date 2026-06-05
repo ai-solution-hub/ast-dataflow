@@ -87,7 +87,7 @@ interface BaselineEntry {
 }
 
 function loadBaseline(repoRoot: string): BaselineEntry[] {
-  const path = join(repoRoot, 'docs', 'generated', 'type-drift-baseline.json');
+  const path = join(repoRoot, '.type-drift-baseline.json');
   if (!existsSync(path)) return [];
   try {
     const raw = readFileSync(path, 'utf8');

@@ -799,11 +799,9 @@ async function main(): Promise<void> {
       }
 
       if (updateBaseline) {
-        // Write fetcher-only rows to baseline file
-        const { writeFileSync, mkdirSync } = await import('node:fs');
+        // Write fetcher-only rows to the repo-root baseline dotfile
+        const { writeFileSync } = await import('node:fs');
         const { join: pathJoin } = await import('node:path');
-        const baselineDir = pathJoin(repoRoot, 'docs', 'generated');
-        mkdirSync(baselineDir, { recursive: true });
         const fetcherOnlyRows = response.results
           .filter(
             (r: TypeDriftResult) =>
@@ -814,7 +812,7 @@ async function main(): Promise<void> {
             declaredAt: { file: r.declaredAt.file },
           }));
         writeFileSync(
-          pathJoin(baselineDir, 'type-drift-baseline.json'),
+          pathJoin(repoRoot, '.type-drift-baseline.json'),
           JSON.stringify(fetcherOnlyRows, null, 2),
         );
         console.error(
