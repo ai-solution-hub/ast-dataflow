@@ -830,14 +830,14 @@ async function main(): Promise<void> {
         console.log(renderMarkdownReport(response.results));
       }
 
-      // Also regenerate the docs/generated/type-drift-report.md when --ci
+      // Also regenerate the repo-root .type-drift-report.md when --ci.
+      // Gitignored dotfile (ID-68 PC-19 slice 1, ratified S317) — generated
+      // artefacts are never canonical (PRODUCT Inv 15/21).
       if (ci) {
-        const { writeFileSync, mkdirSync } = await import('node:fs');
+        const { writeFileSync } = await import('node:fs');
         const { join: pathJoin } = await import('node:path');
-        const docsDir = pathJoin(repoRoot, 'docs', 'generated');
-        mkdirSync(docsDir, { recursive: true });
         writeFileSync(
-          pathJoin(docsDir, 'type-drift-report.md'),
+          pathJoin(repoRoot, '.type-drift-report.md'),
           renderMarkdownReport(response.results),
         );
       }
