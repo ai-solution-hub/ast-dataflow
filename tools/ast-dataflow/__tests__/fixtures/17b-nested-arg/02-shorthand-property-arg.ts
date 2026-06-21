@@ -12,5 +12,5 @@ interface QueryClient {
 
 export async function fetchStatsShorthand(client: QueryClient) {
   const procurementIds = [1, 2, 3];
-  await client.execute('get_bid_question_stats_batch', { procurementIds });
+  await client.execute('get_form_question_stats_batch', { procurementIds });
 }

@@ -12,7 +12,7 @@ interface QueryClient {
 
 export async function fetchStats(client: QueryClient) {
   const procurementIds = [1, 2, 3];
-  await client.execute('get_bid_question_stats_batch', {
+  await client.execute('get_form_question_stats_batch', {
     p_project_ids: procurementIds,
   });
 }

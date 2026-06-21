@@ -698,7 +698,7 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
       ]),
     );
 
-    // hop 2: rpc('get_bid_question_stats_batch', { p_project_ids: procurementIds }) call
+    // hop 2: rpc('get_form_question_stats_batch', { p_project_ids: procurementIds }) call
     // The walker must detect the PropertyAssignment → ObjectLiteralExpression →
     // CallExpression chain and classify the hop as 'argument'.
     expect(response.results).toEqual(
@@ -757,7 +757,7 @@ describe('flow-trace — shorthand property argument (ShorthandPropertyAssignmen
       ]),
     );
 
-    // hop 2: rpc('get_bid_question_stats_batch', { procurementIds }) call
+    // hop 2: rpc('get_form_question_stats_batch', { procurementIds }) call
     // The walker must detect the ShorthandPropertyAssignment → ObjectLiteralExpression →
     // CallExpression chain and classify the hop as 'argument'.
     expect(response.results).toEqual(
