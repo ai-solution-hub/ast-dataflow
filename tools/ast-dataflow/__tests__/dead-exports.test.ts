@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { deadExports, createProject } from '@/lib/ast-dataflow';
+import { deadExports, createProject } from '@/tools/ast-dataflow';
 
 /**
  * dead-exports query — Vitest suite

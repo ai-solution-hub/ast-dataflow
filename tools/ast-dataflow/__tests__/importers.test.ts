@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createProject, importers } from '@/lib/ast-dataflow';
+import { createProject, importers } from '@/tools/ast-dataflow';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '05-importers');
 const VITE_FIXTURE_DIR = resolve(__dirname, 'fixtures', '15-vite');

@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { stringLiteralUses, createProject } from '@/lib/ast-dataflow';
+import { stringLiteralUses, createProject } from '@/tools/ast-dataflow';
 
 /**
  * string-literal-uses query — Vitest suite

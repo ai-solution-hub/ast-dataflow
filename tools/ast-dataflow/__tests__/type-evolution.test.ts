@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createProject, typeEvolution } from '@/lib/ast-dataflow';
+import { createProject, typeEvolution } from '@/tools/ast-dataflow';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '11-type-evolution');
 

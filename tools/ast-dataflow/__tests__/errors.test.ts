@@ -17,7 +17,7 @@ import {
   importers,
   references,
   createProject,
-} from '@/lib/ast-dataflow';
+} from '@/tools/ast-dataflow';
 
 const CALLERS_FIXTURE_DIR = resolve(__dirname, 'fixtures', '01-callers');
 

@@ -12,8 +12,8 @@
 
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createProject } from '@/lib/ast-dataflow';
-import { flowTrace } from '@/lib/ast-dataflow/queries/flow-trace';
+import { createProject } from '@/tools/ast-dataflow';
+import { flowTrace } from '@/tools/ast-dataflow/queries/flow-trace';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '14-flow-trace');
 const PERF_BUDGET_MS = 10_000; // 10 s per PRODUCT.md P-19 heuristic budget

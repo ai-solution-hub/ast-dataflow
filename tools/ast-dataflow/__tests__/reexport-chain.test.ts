@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { reexportChain, createProject } from '@/lib/ast-dataflow';
+import { reexportChain, createProject } from '@/tools/ast-dataflow';
 
 /**
  * reexport-chain query — Vitest suite

@@ -6,7 +6,7 @@
  * define their own local copies.
  */
 import { describe, expect, it } from 'vitest';
-import { isTestFilePath } from '@/lib/ast-dataflow/resolve';
+import { isTestFilePath } from '@/tools/ast-dataflow/resolve';
 
 describe('isTestFilePath — canonical behaviour', () => {
   // ── Standard test-suffix patterns (portable across all frameworks) ──────
@@ -30,9 +30,9 @@ describe('isTestFilePath — canonical behaviour', () => {
   // ── KH-style __tests__/ root prefix ──────────────────────────────────────
 
   it('detects __tests__/ root prefix (KH convention)', () => {
-    expect(isTestFilePath('__tests__/lib/ast-dataflow/importers.test.ts')).toBe(
-      true,
-    );
+    expect(
+      isTestFilePath('tools/ast-dataflow/__tests__/importers.test.ts'),
+    ).toBe(true);
   });
 
   it('detects __tests__/ root prefix (flat fixture)', () => {
@@ -62,7 +62,7 @@ describe('isTestFilePath — canonical behaviour', () => {
   // ── Production file paths — must NOT be flagged as tests ─────────────────
 
   it('does NOT flag production lib file', () => {
-    expect(isTestFilePath('lib/ast-dataflow/resolve.ts')).toBe(false);
+    expect(isTestFilePath('tools/ast-dataflow/resolve.ts')).toBe(false);
   });
 
   it('does NOT flag production component file', () => {

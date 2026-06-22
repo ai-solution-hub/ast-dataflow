@@ -14,13 +14,13 @@ import {
   typeEvolution,
   typeDriftDetect,
   createProject,
-} from '../lib/ast-dataflow';
+} from './index';
 import type {
   BaseResult,
   QueryResponse,
   ReferenceKind,
   TypeDriftResult,
-} from '../lib/ast-dataflow';
+} from './index';
 
 interface ParsedArgs {
   query: string | undefined;
@@ -143,7 +143,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts type-evolution --type ProcurementQuestion --property project_id',
+              'bun run ast-dataflow type-evolution --type ProcurementQuestion --property project_id',
           },
           {
             name: 'dead-exports',
@@ -155,7 +155,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts dead-exports --symbol unusedHelper --exclude-tests',
+              'bun run ast-dataflow dead-exports --symbol unusedHelper --exclude-tests',
           },
           {
             name: 'reexport-chain',
@@ -167,7 +167,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
+              'bun run ast-dataflow reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
           },
           // --- enum-uses ---
           {
@@ -179,14 +179,14 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts enum-uses --enum OrderStatus --member PENDING',
+              'bun run ast-dataflow enum-uses --enum OrderStatus --member PENDING',
           },
           // --- string-literal-uses ---
           {
             name: 'string-literal-uses',
             args: ['--value <literal>', '--limit N', '--pretty'],
             example:
-              "bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'",
+              "bun run ast-dataflow string-literal-uses --value '@/lib/supabase/safe'",
           },
           // --- type-drift-detect ---
           {
@@ -215,7 +215,7 @@ function printCatalogue(): void {
               '[--json | --pretty]',
             ],
             example:
-              'bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
+              'bun run ast-dataflow flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
           },
         ],
         notes:
@@ -506,14 +506,14 @@ async function main(): Promise<void> {
       if (typeof typeName !== 'string' || !typeName) {
         console.error('type-evolution requires --type <TypeName>');
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type ProcurementQuestion --property project_id',
+          'Example: bun run ast-dataflow type-evolution --type ProcurementQuestion --property project_id',
         );
         process.exit(2);
       }
       if (typeof property !== 'string' || !property) {
         console.error('type-evolution requires --property <propertyName>');
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts type-evolution --type ProcurementQuestion --property project_id',
+          'Example: bun run ast-dataflow type-evolution --type ProcurementQuestion --property project_id',
         );
         process.exit(2);
       }
@@ -570,7 +570,7 @@ async function main(): Promise<void> {
       if (typeof symbolArg !== 'string' || !symbolArg) {
         console.error('reexport-chain requires --symbol <name>');
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
+          'Example: bun run ast-dataflow reexport-chain --symbol DialogClose --from components/ui/dialog.tsx',
         );
         process.exit(2);
       }
@@ -602,7 +602,7 @@ async function main(): Promise<void> {
       if (typeof enumName !== 'string' || !enumName) {
         console.error('enum-uses requires --enum <EnumName>');
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts enum-uses --enum OrderStatus',
+          'Example: bun run ast-dataflow enum-uses --enum OrderStatus',
         );
         process.exit(2);
       }
@@ -632,7 +632,7 @@ async function main(): Promise<void> {
       if (typeof valueArg !== 'string' || !valueArg) {
         console.error('string-literal-uses requires --value <literal>');
         console.error(
-          "Example: bun scripts/ast-dataflow-cli.ts string-literal-uses --value '@/lib/supabase/safe'",
+          "Example: bun run ast-dataflow string-literal-uses --value '@/lib/supabase/safe'",
         );
         process.exit(2);
       }
@@ -664,7 +664,7 @@ async function main(): Promise<void> {
           'flow-trace requires --origin-file <repo-root-relative-path>',
         );
         console.error(
-          'Example: bun scripts/ast-dataflow-cli.ts flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9',
+          'Example: bun run ast-dataflow flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9',
         );
         process.exit(2);
       }

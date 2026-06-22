@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { columnWrites, createProject } from '@/lib/ast-dataflow';
+import { columnWrites, createProject } from '@/tools/ast-dataflow';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '08-column-writes');
 

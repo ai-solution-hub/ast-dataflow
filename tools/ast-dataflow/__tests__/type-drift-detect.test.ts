@@ -2,8 +2,8 @@ import { resolve, join } from 'node:path';
 import { mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { typeDriftDetect, createProject } from '@/lib/ast-dataflow';
-import type { TypeDriftResult } from '@/lib/ast-dataflow';
+import { typeDriftDetect, createProject } from '@/tools/ast-dataflow';
+import type { TypeDriftResult } from '@/tools/ast-dataflow';
 
 /**
  * type-drift-detect query — Vitest suite.

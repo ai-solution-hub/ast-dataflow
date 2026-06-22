@@ -1,6 +1,6 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { createProject, enumUses } from '@/lib/ast-dataflow';
+import { createProject, enumUses } from '@/tools/ast-dataflow';
 
 /**
  * enum-uses query — Vitest suite

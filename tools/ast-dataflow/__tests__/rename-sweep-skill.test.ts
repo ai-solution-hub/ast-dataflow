@@ -5,7 +5,7 @@ import {
   importers,
   references,
   stringLiteralUses,
-} from '@/lib/ast-dataflow';
+} from '@/tools/ast-dataflow';
 
 /**
  * Rename-sweep verifier — 3-query battery test
@@ -20,7 +20,7 @@ import {
  *
  * The rename-sweep battery (Q1 + Q2 + Q3) surfaces those misses.
  *
- * Fixture: __tests__/lib/ast-dataflow/fixtures/16-rename-sweep/
+ * Fixture: tools/ast-dataflow/__tests__/fixtures/16-rename-sweep/
  *   post-rename-source.ts     — renamed module (generateChangeReport)
  *   consumer-renamed.ts       — correctly-updated consumer (no misses)
  *   test-with-missed-string.ts — test file with two unmissed string literals
