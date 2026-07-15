@@ -56,6 +56,31 @@ const REFERENCE_KINDS: ReferenceKind[] = [
 ];
 
 /**
+ * Parse `--limit` into a positive integer, or exit 2 on a malformed value
+ * (PRODUCT.md invariant 27: malformed arguments exit non-zero with the
+ * offending argument and its expected shape). Previously a non-numeric limit
+ * parsed to NaN and either silently disabled the cap or — for queries using
+ * `rows.length < limit` — silently returned zero rows.
+ */
+function parseLimit(flag: string | boolean | undefined): number | undefined {
+  if (flag === undefined) return undefined;
+  if (typeof flag !== 'string' || !/^\d+$/.test(flag)) {
+    console.error(
+      `Invalid --limit value: "${String(flag)}". Expected a positive integer, e.g. --limit 50.`,
+    );
+    process.exit(2);
+  }
+  const parsed = Number.parseInt(flag, 10);
+  if (parsed < 1) {
+    console.error(
+      `Invalid --limit value: "${flag}". Expected a positive integer >= 1.`,
+    );
+    process.exit(2);
+  }
+  return parsed;
+}
+
+/**
  * Emit a query response to stdout (PRODUCT.md P-29).
  *
  * Rules:
@@ -219,7 +244,7 @@ function printCatalogue(): void {
           },
         ],
         notes:
-          'S9 — callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + flow-trace + type-drift-detect queries are wired. See docs/specs/id-16-ast-dataflow-tool/PRODUCT.md for the full surface.',
+          'callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + flow-trace + type-drift-detect queries are wired. Full surface spec: docs-site specs/id-50-ast-dataflow-tool/PRODUCT.md; agent guidance: .claude/skills/ast-dataflow/SKILL.md.',
       },
       null,
       2,
@@ -354,11 +379,7 @@ async function main(): Promise<void> {
         console.error('callers requires --symbol <file:name>');
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const response = await callers(
         { symbol, ...(limit ? { limit } : {}) },
         project,
@@ -377,11 +398,7 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const response = await importers(
         { modulePath, ...(limit ? { limit } : {}) },
         project,
@@ -400,11 +417,7 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const kindArg = parsed.flags.kind;
       const kind =
         typeof kindArg === 'string' &&
@@ -443,11 +456,7 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await columnReads(
         {
@@ -480,11 +489,7 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await columnWrites(
         {
@@ -517,11 +522,7 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const fileArg = parsed.flags.file;
       const file = typeof fileArg === 'string' ? fileArg : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
@@ -543,11 +544,7 @@ async function main(): Promise<void> {
     case 'dead-exports': {
       const symbolArg = parsed.flags.symbol;
       const symbolsFileArg = parsed.flags.symbols;
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await deadExports(
         {
@@ -576,11 +573,7 @@ async function main(): Promise<void> {
       }
       const fromArg = parsed.flags.from;
       const from = typeof fromArg === 'string' ? fromArg : undefined;
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await reexportChain(
         {
@@ -608,11 +601,7 @@ async function main(): Promise<void> {
       }
       const memberArg = parsed.flags.member;
       const member = typeof memberArg === 'string' ? memberArg : undefined;
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const response = await enumUses(
         {
           enum: enumName,
@@ -636,11 +625,7 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const response = await stringLiteralUses(
         {
           value: valueArg,
@@ -702,11 +687,7 @@ async function main(): Promise<void> {
       }
 
       const interFunction = parsed.flags['inter-function'] === true;
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const pretty = parsed.flags.pretty === true;
 
@@ -750,11 +731,7 @@ async function main(): Promise<void> {
     }
     // --- type-drift-detect ---
     case 'type-drift-detect': {
-      const limitArg = parsed.flags.limit;
-      const limit =
-        typeof limitArg === 'string'
-          ? Number.parseInt(limitArg, 10)
-          : undefined;
+      const limit = parseLimit(parsed.flags.limit);
       const scopeArg = parsed.flags.scope;
       const scope = typeof scopeArg === 'string' ? scopeArg : undefined;
       const ifacePatternArg = parsed.flags['interface-pattern'];
@@ -795,6 +772,16 @@ async function main(): Promise<void> {
         console.error(
           `type-drift-detect: ${typedResponse.newSinceBaseline.length} new fetcher-only interface(s) not in baseline: ${typedResponse.newSinceBaseline.join(', ')}`,
         );
+        // Regenerate the report file even on the failing path — the report is
+        // most useful precisely when CI fails (ID-68 PC-19 slice 1).
+        {
+          const { writeFileSync } = await import('node:fs');
+          const { join: pathJoin } = await import('node:path');
+          writeFileSync(
+            pathJoin(repoRoot, '.type-drift-report.md'),
+            renderMarkdownReport(response.results),
+          );
+        }
         process.exit(1);
       }
 

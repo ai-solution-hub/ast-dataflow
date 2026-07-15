@@ -1,10 +1,4 @@
-import {
-  type Project,
-  SyntaxKind,
-  type CallExpression,
-  type Node,
-  type SourceFile,
-} from 'ts-morph';
+import { type Project, SyntaxKind, type Node } from 'ts-morph';
 import type {
   ColumnWritesArgs,
   ColumnWriteResult,
@@ -12,6 +6,13 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
+import {
+  collectChain,
+  detectIsTyped,
+  findFromCalls,
+  objectLiteralHasKey,
+  objectLiteralHasSpread,
+} from './supabase-shared';
 
 const DEFAULT_LIMIT = 200;
 
@@ -34,240 +35,49 @@ const WRITE_METHODS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * Determine whether the Supabase client used in a `.from('table')` call chain
- * is type-instantiated (carries a `Database` generic parameter).
- *
- * Mirrors the heuristic in `column-reads.ts` — check the return type of the
- * `.from(...)` call for the table name, and fall back to inspecting the
- * variable declaration of the client binding for a type argument on
- * `createClient<...>(...)`.
- */
-function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
-  // Strategy 1: check the return type of .from('table') — typed clients embed
-  // the table name in the generic parameter.
-  try {
-    const returnTypeText = fromCallExpr.getReturnType().getText();
-    if (returnTypeText.includes(table)) {
-      return true;
-    }
-    if (
-      !returnTypeText.includes('Record<string, unknown>') &&
-      !returnTypeText.includes('unknown') &&
-      returnTypeText.includes('{')
-    ) {
-      return true;
-    }
-  } catch {
-    // Type resolution may fail on fixture projects with stub types; fall through.
-  }
-
-  // Strategy 2: inspect the variable declaration of the client binding for a
-  // type argument on createClient<...>(...).
-  try {
-    const propAccess = fromCallExpr.getExpression();
-    if (propAccess.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const clientExpr = (
-        propAccess as import('ts-morph').PropertyAccessExpression
-      ).getExpression();
-      const symbol = clientExpr.getType().getSymbol();
-      if (!symbol) return false;
-      const decls = symbol.getDeclarations();
-      for (const decl of decls) {
-        if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-          const initialiser = (
-            decl as import('ts-morph').VariableDeclaration
-          ).getInitializer();
-          if (initialiser?.getKind() === SyntaxKind.CallExpression) {
-            const initCall = initialiser as CallExpression;
-            const typeArgs = initCall.getTypeArguments();
-            if (typeArgs.length > 0) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-  } catch {
-    // Symbol resolution may fail; fall through.
-  }
-
-  return false;
-}
-
-/**
- * Return true if an object literal has a property whose key matches `name`.
- *
- * Handles:
- * - Longhand: `{ project_id: value }` — PropertyAssignment whose name is
- *   the target column.
- * - Shorthand: `{ project_id }` — ShorthandPropertyAssignment.
- * - Computed string literal: `{ ['project_id']: value }` — ComputedPropertyName
- *   whose expression is a StringLiteral matching the target.
- */
-function objectLiteralHasKey(
-  objLiteral: import('ts-morph').ObjectLiteralExpression,
-  name: string,
-): boolean {
-  return objLiteral.getProperties().some((prop) => {
-    const kind = prop.getKind();
-    if (kind === SyntaxKind.PropertyAssignment) {
-      const pa = prop as import('ts-morph').PropertyAssignment;
-      // Longhand: `{ project_id: value }`
-      if (pa.getName() === name) return true;
-      // Computed string literal: `{ ['project_id']: value }`
-      const nameNode = pa.getNameNode();
-      if (nameNode.getKind() === SyntaxKind.ComputedPropertyName) {
-        const inner = (
-          nameNode as import('ts-morph').ComputedPropertyName
-        ).getExpression();
-        if (
-          inner.getKind() === SyntaxKind.StringLiteral &&
-          inner.getText().slice(1, -1) === name
-        ) {
-          return true;
-        }
-      }
-      return false;
-    }
-    if (kind === SyntaxKind.ShorthandPropertyAssignment) {
-      return (
-        (prop as import('ts-morph').ShorthandPropertyAssignment).getName() ===
-        name
-      );
-    }
-    return false;
-  });
-}
-
-/**
- * Find the nearest enclosing function-like body for a given node.
- *
- * Returns the FunctionDeclaration, ArrowFunction, FunctionExpression, or
- * MethodDeclaration ancestor, or the SourceFile if the node is at module
- * top-level.
- */
-function findEnclosingFunctionBody(node: Node): Node {
-  let current: Node | undefined = node.getParent();
-  while (current) {
-    const kind = current.getKind();
-    if (
-      kind === SyntaxKind.FunctionDeclaration ||
-      kind === SyntaxKind.ArrowFunction ||
-      kind === SyntaxKind.FunctionExpression ||
-      kind === SyntaxKind.MethodDeclaration
-    ) {
-      return current;
-    }
-    if (kind === SyntaxKind.SourceFile) {
-      return current;
-    }
-    current = current.getParent();
-  }
-  return node.getSourceFile();
-}
-
-/**
  * Try to resolve an Identifier argument (e.g. `payload` in `.update(payload)`)
- * to an object literal in the same scope — the "one-hop spread chase".
+ * to an object literal — the "one-hop spread chase".
  *
- * Returns the object literal node if found (and it contains the target key),
- * or null if the reference cannot be traced within one hop.
+ * Resolution is symbol-based (type-checker): the identifier's declaration must
+ * be a VariableDeclaration whose initialiser is an ObjectLiteralExpression
+ * (optionally wrapped in `as` / `satisfies` / parentheses). Function
+ * parameters, imported bindings, and computed values are NOT followed —
+ * callers report those as `indirect`.
  *
- * One hop means: the identifier references a variable declared in the same
- * enclosing function scope with a VariableDeclaration whose initialiser is an
- * ObjectLiteralExpression. Function parameters, imported bindings, and
- * bindings from outer or inner scopes are NOT followed — report `indirect`.
+ * Returns the object literal if resolved, or null.
  */
 function resolveOneHopObjectLiteral(
   identifierNode: Node,
-  targetKey: string,
 ): import('ts-morph').ObjectLiteralExpression | null {
-  // The identifier must be a plain name reference (not a member access).
   if (identifierNode.getKind() !== SyntaxKind.Identifier) return null;
 
-  const identText = identifierNode.getText();
-
-  // Find the enclosing function body to scope the search.
-  const enclosingScope = findEnclosingFunctionBody(identifierNode);
-
-  // Walk VariableDeclarations within the enclosing function scope only.
-  for (const varDecl of enclosingScope.getDescendantsOfKind(
-    SyntaxKind.VariableDeclaration,
-  )) {
-    if (varDecl.getName() !== identText) continue;
-    const init = varDecl.getInitializer();
-    if (!init) continue;
-    if (init.getKind() !== SyntaxKind.ObjectLiteralExpression) continue;
-    const objLit = init as import('ts-morph').ObjectLiteralExpression;
-    if (objectLiteralHasKey(objLit, targetKey)) {
-      return objLit;
+  try {
+    const decls = identifierNode.getSymbol()?.getDeclarations() ?? [];
+    for (const decl of decls) {
+      if (decl.getKind() !== SyntaxKind.VariableDeclaration) continue;
+      let init: Node | undefined = (
+        decl as import('ts-morph').VariableDeclaration
+      ).getInitializer();
+      // Unwrap `{...} as const`, `{...} satisfies T`, `({...})`.
+      while (
+        init &&
+        (init.getKind() === SyntaxKind.AsExpression ||
+          init.getKind() === SyntaxKind.SatisfiesExpression ||
+          init.getKind() === SyntaxKind.ParenthesizedExpression)
+      ) {
+        init = (
+          init as unknown as { getExpression: () => Node }
+        ).getExpression();
+      }
+      if (init?.getKind() === SyntaxKind.ObjectLiteralExpression) {
+        return init as import('ts-morph').ObjectLiteralExpression;
+      }
     }
+  } catch {
+    // Symbol resolution failed — treat as untraceable.
   }
 
   return null;
-}
-
-/**
- * Walk a source file and collect all `.from('<table>')` call expressions
- * that match the target table name.
- */
-function findFromCalls(sf: SourceFile, table: string): CallExpression[] {
-  const results: CallExpression[] = [];
-
-  const callExprs = sf.getDescendantsOfKind(SyntaxKind.CallExpression);
-  for (const callExpr of callExprs) {
-    const expr = callExpr.getExpression();
-    if (expr.getKind() !== SyntaxKind.PropertyAccessExpression) continue;
-
-    const propAccess = expr as import('ts-morph').PropertyAccessExpression;
-    if (propAccess.getName() !== 'from') continue;
-
-    const args = callExpr.getArguments();
-    if (args.length === 0) continue;
-    const firstArg = args[0];
-    if (firstArg.getKind() !== SyntaxKind.StringLiteral) continue;
-    const tableValue = firstArg.getText().slice(1, -1);
-    if (tableValue !== table) continue;
-
-    results.push(callExpr);
-  }
-
-  return results;
-}
-
-/**
- * Given a `.from('table')` CallExpression, walk the parent chain upward
- * collecting all chained method calls that form the mutation chain.
- *
- * Returns an array of { method, callExpr } items for each step in the
- * fluent chain above `.from()`.
- */
-function collectChain(
-  fromCallExpr: CallExpression,
-): Array<{ method: string; callExpr: CallExpression }> {
-  const chain: Array<{ method: string; callExpr: CallExpression }> = [];
-
-  let parent: Node | undefined = fromCallExpr.getParent();
-  while (parent) {
-    if (parent.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const propAccess = parent as import('ts-morph').PropertyAccessExpression;
-      const methodName = propAccess.getName();
-      const grandParent = propAccess.getParent();
-      if (grandParent?.getKind() === SyntaxKind.CallExpression) {
-        chain.push({
-          method: methodName,
-          callExpr: grandParent as CallExpression,
-        });
-        parent = grandParent.getParent();
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
-
-  return chain;
 }
 
 /**
@@ -275,15 +85,18 @@ function collectChain(
  * determine whether it contains the target column.
  *
  * Returns `{ found: false }` when the argument is an object literal that
- * clearly does NOT contain the target key (skip this call site).
+ * clearly does NOT contain the target key — which requires both no matching
+ * key AND no spread property (a spread can carry the column invisibly).
  *
  * Returns `{ found: true, confidence }` when the column is present or cannot
  * be ruled out:
  * - `'exact'`    — typed client + literal key confirmed.
- * - `'indirect'` — untyped client, or argument cannot be traced statically.
+ * - `'indirect'` — untyped client, spread-carried, or argument cannot be
+ *                  traced statically.
  *
  * Array-form arguments (`.insert([{ ... }])`) are supported by inspecting
- * every ObjectLiteralExpression element.
+ * every element; non-object-literal elements (identifiers, spreads, calls)
+ * prevent ruling the column out and downgrade to `indirect`.
  */
 type WriteArgResult =
   | { found: false }
@@ -302,30 +115,51 @@ function inspectWriteArg(
     if (objectLiteralHasKey(objLit, targetKey)) {
       return { found: true, confidence: isTyped ? 'exact' : 'indirect' };
     }
+    if (objectLiteralHasSpread(objLit)) {
+      // `{ ...payload }` — the spread source may carry the target column;
+      // cannot confirm absence.
+      return { found: true, confidence: 'indirect' };
+    }
     return { found: false };
   }
 
   // Array literal: .insert([{ project_id: value }, ...])
-  // Inspect every element that is an object literal.
   if (kind === SyntaxKind.ArrayLiteralExpression) {
     const arrLit = argNode as import('ts-morph').ArrayLiteralExpression;
+    let allElementsRuledOut = true;
     for (const elem of arrLit.getElements()) {
       if (elem.getKind() === SyntaxKind.ObjectLiteralExpression) {
         const objLit = elem as import('ts-morph').ObjectLiteralExpression;
         if (objectLiteralHasKey(objLit, targetKey)) {
           return { found: true, confidence: isTyped ? 'exact' : 'indirect' };
         }
+        if (objectLiteralHasSpread(objLit)) {
+          allElementsRuledOut = false;
+        }
+      } else {
+        // Identifier / spread / call element — cannot inspect statically.
+        allElementsRuledOut = false;
       }
     }
-    return { found: false };
+    if (allElementsRuledOut) {
+      return { found: false };
+    }
+    return { found: true, confidence: 'indirect' };
   }
 
   // Identifier: one-hop spread chase.
   if (kind === SyntaxKind.Identifier) {
-    const resolved = resolveOneHopObjectLiteral(argNode, targetKey);
+    const resolved = resolveOneHopObjectLiteral(argNode);
     if (resolved !== null) {
-      // Traced one hop to a local const with the target key.
-      return { found: true, confidence: isTyped ? 'exact' : 'indirect' };
+      if (objectLiteralHasKey(resolved, targetKey)) {
+        // Traced one hop to a local const with the target key.
+        return { found: true, confidence: isTyped ? 'exact' : 'indirect' };
+      }
+      if (!objectLiteralHasSpread(resolved)) {
+        // Fully-literal object without the key — the column is provably absent.
+        return { found: false };
+      }
+      return { found: true, confidence: 'indirect' };
     }
     // Cannot trace — the identifier is a parameter, import, or complex
     // expression. Emit an indirect row (cannot confirm absence of the column).

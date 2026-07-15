@@ -151,6 +151,56 @@ function visitedKey(file: string, line: number, column: number): string {
 }
 
 /**
+ * Resolve the checker symbol of a binding declaration (VariableDeclaration,
+ * ParameterDeclaration, BindingElement). Used to reject same-name identifiers
+ * that belong to a different (shadowing) binding — pure text matching walks
+ * into nested functions that redeclare the name.
+ * Returns undefined when the symbol cannot be resolved; callers then fall
+ * back to text+position matching.
+ */
+function bindingSymbol(declNode: Node): import('ts-morph').Symbol | undefined {
+  try {
+    const nameNode = (
+      declNode as unknown as { getNameNode?: () => Node | undefined }
+    ).getNameNode?.();
+    return nameNode?.getSymbol() ?? declNode.getSymbol();
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * True when `useNode` is a reference to the binding declared at `declNode`
+ * (whose symbol is `declSym`). Falls back to accepting the use when either
+ * symbol is unresolvable, preserving the previous text-match behaviour.
+ */
+function isSameBinding(
+  useNode: Node,
+  declSym: import('ts-morph').Symbol | undefined,
+): boolean {
+  if (!declSym) return true;
+  try {
+    // Shorthand `{ name }` resolves the identifier to the PROPERTY symbol;
+    // the referenced binding is the shorthand-assignment VALUE symbol.
+    if (
+      useNode.getParent()?.getKind() === SyntaxKind.ShorthandPropertyAssignment
+    ) {
+      const checker = useNode.getProject().getTypeChecker().compilerObject;
+      const valueSym = checker.getShorthandAssignmentValueSymbol(
+        useNode.getParent()!.compilerNode,
+      );
+      if (!valueSym) return true;
+      return valueSym === declSym.compilerSymbol;
+    }
+    const useSym = useNode.getSymbol();
+    if (!useSym) return true;
+    return useSym.compilerSymbol === declSym.compilerSymbol;
+  } catch {
+    return true;
+  }
+}
+
+/**
  * Find the nearest enclosing function-like body for a given node.
  * Returns the SourceFile if the node is at module top-level.
  */
@@ -557,12 +607,15 @@ function walkForward(
   const scope = findEnclosingScope(declNode);
   const declPos = declNode.getStart();
   const relFile = toRepoRelative(state.repoRoot, sf.getFilePath());
+  const declSym = bindingSymbol(declNode);
 
   // Scan for all identifier uses of `name` within the enclosing scope,
-  // occurring after the declaration.
+  // occurring after the declaration. Symbol identity (when resolvable)
+  // rejects same-name identifiers of shadowing bindings in nested scopes.
   for (const useNode of scope.getDescendantsOfKind(SyntaxKind.Identifier)) {
     if (useNode.getText() !== name) continue;
     if (useNode.getStart() <= declPos) continue;
+    if (!isSameBinding(useNode, declSym)) continue;
 
     const parent = useNode.getParent();
     if (!parent) continue;
@@ -716,8 +769,51 @@ function walkForward(
             });
           }
         }
+        continue;
       }
-      // Do not descend further — re-assignments lead back to existing bindings.
+
+      // Re-assignment into an existing binding: `out = tracked`.
+      // Previously this flow was dropped with no row at all. Emit an
+      // assignment hop at the assignment expression and continue the walk
+      // from the assignment position under the LHS name (uses of the LHS
+      // before this assignment are out of range by the position filter).
+      const assignLineCol = sf.getLineAndColumnAtPos(binExpr.getStart());
+      const assignKey = visitedKey(
+        relFile,
+        assignLineCol.line,
+        assignLineCol.column,
+      );
+      if (state.visited.has(assignKey)) continue;
+
+      state.totalEstimated++;
+      const assignHopNum = ++state.hopCounter;
+      state.visited.add(assignKey);
+
+      if (state.rows.length < state.limit) {
+        state.rows.push({
+          hop: assignHopNum,
+          parentHop: parentHopNumber,
+          kind: 'assignment',
+          file: relFile,
+          line: assignLineCol.line,
+          column: assignLineCol.column,
+          confidence: 'exact',
+          enclosing: findEnclosing(binExpr),
+          origin: state.origin,
+        });
+      }
+
+      if (lhs.getKind() === SyntaxKind.Identifier) {
+        walkForward(binExpr, lhs.getText(), sf, depth + 1, assignHopNum, state);
+        walkDestructuring(
+          binExpr,
+          lhs.getText(),
+          sf,
+          depth + 1,
+          assignHopNum,
+          state,
+        );
+      }
       continue;
     }
 
@@ -1094,10 +1190,12 @@ function walkDestructuring(
   const scope = findEnclosingScope(declNode);
   const declPos = declNode.getStart();
   const relFile = toRepoRelative(state.repoRoot, sf.getFilePath());
+  const declSym = bindingSymbol(declNode);
 
   for (const useNode of scope.getDescendantsOfKind(SyntaxKind.Identifier)) {
     if (useNode.getText() !== name) continue;
     if (useNode.getStart() <= declPos) continue;
+    if (!isSameBinding(useNode, declSym)) continue;
 
     const parent = useNode.getParent();
     if (!parent || parent.getKind() !== SyntaxKind.VariableDeclaration)

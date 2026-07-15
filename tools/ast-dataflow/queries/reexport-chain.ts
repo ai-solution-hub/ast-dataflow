@@ -209,12 +209,14 @@ function buildReexportChain(
         if (excludeTests && isTestFilePath(consumerRelPath)) continue;
 
         // A barrel re-export of this barrel is not an "importer" — it's a
-        // further hop. Only emit importer rows for files that are NOT
-        // themselves re-exporting the symbol (i.e. they consume it).
-        // We check: does this consumer itself re-export our symbol?
+        // further hop. Only skip the consumer when it re-exports OUR symbol
+        // from this barrel (a consumer that re-exports some other symbol but
+        // also imports the barrel for its own use is still a real importer).
         const isAnotherBarrel = consumer.getExportDeclarations().some((ed) => {
           const modSpec = ed.getModuleSpecifierSourceFile();
-          return modSpec?.getFilePath() === barrelAbsPath;
+          if (modSpec?.getFilePath() !== barrelAbsPath) return false;
+          if (ed.isNamespaceExport()) return true;
+          return ed.getNamedExports().some((ne) => ne.getName() === symbolName);
         });
         if (isAnotherBarrel) continue;
 

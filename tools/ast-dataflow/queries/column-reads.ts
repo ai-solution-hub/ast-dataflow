@@ -1,10 +1,4 @@
-import {
-  type Project,
-  SyntaxKind,
-  type CallExpression,
-  type Node,
-  type SourceFile,
-} from 'ts-morph';
+import { type Project, SyntaxKind, type CallExpression } from 'ts-morph';
 import type {
   ColumnReadsArgs,
   ColumnReadResult,
@@ -12,103 +6,37 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
+import {
+  collectChain,
+  detectIsTyped,
+  findFromCalls,
+  objectLiteralHasKey,
+} from './supabase-shared';
 
 const DEFAULT_LIMIT = 200;
 
 /**
- * Determine whether the Supabase client used in a `.from('table')` call chain
- * is type-instantiated (i.e. carries a `Database` generic parameter).
- *
- * Strategy:
- * 1. Walk up from the `.from(...)` CallExpression to find the base expression
- *    (the client variable reference, e.g. `supabase`, `sb`).
- * 2. Get the type text of that base expression. For a typed client
- *    (`createClient<Database>(...)`) the type text includes the table name in
- *    the resolved return of `.from()`. For an untyped client it resolves to
- *    `Record<string, unknown>` or `unknown`.
- * 3. Additionally check whether the `.from()` call's return type text contains
- *    the table name string — typed clients embed the table name in their type
- *    parameters.
- *
- * The heuristic may produce false-negatives when the client is passed through
- * several function boundaries (type erasure at callsite). In that case
- * `isTyped: false` with `confidence: 'indirect'` is the safe default.
+ * Chain methods that name a column as their first string argument and are
+ * read/filter sites (not payload writes). `.eq()` keeps its dedicated method
+ * value for backwards compatibility; the rest report as `method: 'filter'`
+ * with the actual chain method recorded in `columnPath`'s row context via
+ * `chainMethod` (see ColumnReadResult).
  */
-function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
-  // Walk to the root of the chain (the leftmost expression in the chain).
-  let base: Node = fromCallExpr;
-  while (true) {
-    const expr = (base as CallExpression).getExpression?.();
-    if (!expr) break;
-    if (expr.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const inner = (
-        expr as import('ts-morph').PropertyAccessExpression
-      ).getExpression();
-      if (inner.getKind() === SyntaxKind.CallExpression) {
-        base = inner as CallExpression;
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
-
-  // Strategy 1: check the return type of .from('table') — typed clients embed
-  // the table name in the generic parameter.
-  try {
-    const returnTypeText = fromCallExpr.getReturnType().getText();
-    if (returnTypeText.includes(table)) {
-      return true;
-    }
-    // If the return type resolves to a strongly-typed Row shape (not Record<string, unknown>
-    // or unknown), treat as typed.
-    if (
-      !returnTypeText.includes('Record<string, unknown>') &&
-      !returnTypeText.includes('unknown') &&
-      returnTypeText.includes('{')
-    ) {
-      return true;
-    }
-  } catch {
-    // Type resolution may fail on fixture projects with stub types; fall through.
-  }
-
-  // Strategy 2: check the variable declaration of the client binding for a
-  // type argument on createClient<...>(...).
-  // Walk from the PropertyAccessExpression expression (the LHS of `.from(...)`)
-  // up to its variable declaration, then look at the initialiser for type args.
-  try {
-    const propAccess = fromCallExpr.getExpression();
-    if (propAccess.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const clientExpr = (
-        propAccess as import('ts-morph').PropertyAccessExpression
-      ).getExpression();
-      // Resolve to the variable's type via its declaration.
-      const symbol = clientExpr.getType().getSymbol();
-      if (!symbol) return false;
-      const decls = symbol.getDeclarations();
-      for (const decl of decls) {
-        if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-          const initialiser = (
-            decl as import('ts-morph').VariableDeclaration
-          ).getInitializer();
-          if (initialiser?.getKind() === SyntaxKind.CallExpression) {
-            const initCall = initialiser as CallExpression;
-            const typeArgs = initCall.getTypeArguments();
-            if (typeArgs.length > 0) {
-              return true;
-            }
-          }
-        }
-      }
-    }
-  } catch {
-    // Symbol resolution may fail; fall through.
-  }
-
-  return false;
-}
+const FILTER_METHODS: ReadonlySet<string> = new Set([
+  'neq',
+  'gt',
+  'gte',
+  'lt',
+  'lte',
+  'like',
+  'ilike',
+  'is',
+  'in',
+  'contains',
+  'containedBy',
+  'overlaps',
+  'textSearch',
+]);
 
 /**
  * Parse a `.select('col1, col2, ...')` string argument and check if
@@ -123,14 +51,21 @@ function detectIsTyped(fromCallExpr: CallExpression, table: string): boolean {
  *   name before 'as'). Supabase-js itself does not use `as`, but the
  *   tokeniser tolerates whitespace tails defensively.
  * - Nested relation syntax: `'id, bid_responses ( id, text )'` — only
- *   top-level tokens are matched (tokens before the first `(`).
+ *   top-level tokens are matched. Nested blocks are stripped iteratively so
+ *   relations-within-relations do not leave stray tokens.
  */
 function selectContainsColumn(
   selectStr: string,
   targetColumn: string,
 ): boolean {
-  // Strip nested relation blocks (anything in parentheses including the content).
-  const withoutRelations = selectStr.replace(/\(.*?\)/gs, '');
+  // Strip nested relation blocks innermost-first so nested parentheses are
+  // fully removed (a single non-greedy pass leaves `rel)` fragments behind).
+  let withoutRelations = selectStr;
+  let prev = '';
+  while (prev !== withoutRelations) {
+    prev = withoutRelations;
+    withoutRelations = withoutRelations.replace(/\([^()]*\)/gs, '');
+  }
   const tokens = withoutRelations
     .split(',')
     .map((t) => {
@@ -150,100 +85,16 @@ function selectContainsColumn(
 }
 
 /**
- * Return true if an object literal has a property whose key matches `name`,
- * handling both shorthand (`{ project_id }`) and longhand (`{ project_id:
- * value }`) property assignments.
- */
-function objectLiteralHasKey(
-  objLiteral: import('ts-morph').ObjectLiteralExpression,
-  name: string,
-): boolean {
-  return objLiteral.getProperties().some((prop) => {
-    const kind = prop.getKind();
-    if (kind === SyntaxKind.PropertyAssignment) {
-      return (prop as import('ts-morph').PropertyAssignment).getName() === name;
-    }
-    if (kind === SyntaxKind.ShorthandPropertyAssignment) {
-      return (
-        (prop as import('ts-morph').ShorthandPropertyAssignment).getName() ===
-        name
-      );
-    }
-    return false;
-  });
-}
-
-/**
- * Given a `.from('table')` CallExpression, walk the parent chain upward
- * collecting all chained method calls that form the query chain.
- *
- * Returns an array of { method: string; callExpr: CallExpression } items
- * representing each step in the fluent chain above the `.from()` call.
- */
-function collectChain(
-  fromCallExpr: CallExpression,
-): Array<{ method: string; callExpr: CallExpression }> {
-  const chain: Array<{ method: string; callExpr: CallExpression }> = [];
-
-  let parent: Node | undefined = fromCallExpr.getParent();
-  while (parent) {
-    if (parent.getKind() === SyntaxKind.PropertyAccessExpression) {
-      const propAccess = parent as import('ts-morph').PropertyAccessExpression;
-      const methodName = propAccess.getName();
-      const grandParent = propAccess.getParent();
-      if (grandParent?.getKind() === SyntaxKind.CallExpression) {
-        chain.push({
-          method: methodName,
-          callExpr: grandParent as CallExpression,
-        });
-        parent = grandParent.getParent();
-      } else {
-        break;
-      }
-    } else {
-      break;
-    }
-  }
-
-  return chain;
-}
-
-/**
- * Walk a source file and collect all `.from('<table>')` call expressions.
- */
-function findFromCalls(sf: SourceFile, table: string): CallExpression[] {
-  const results: CallExpression[] = [];
-
-  const callExprs = sf.getDescendantsOfKind(SyntaxKind.CallExpression);
-  for (const callExpr of callExprs) {
-    const expr = callExpr.getExpression();
-    if (expr.getKind() !== SyntaxKind.PropertyAccessExpression) continue;
-
-    const propAccess = expr as import('ts-morph').PropertyAccessExpression;
-    if (propAccess.getName() !== 'from') continue;
-
-    // Check first argument is the target table string literal.
-    const args = callExpr.getArguments();
-    if (args.length === 0) continue;
-    const firstArg = args[0];
-    if (firstArg.getKind() !== SyntaxKind.StringLiteral) continue;
-    const tableValue = firstArg.getText().slice(1, -1); // strip quotes
-    if (tableValue !== table) continue;
-
-    results.push(callExpr);
-  }
-
-  return results;
-}
-
-/**
  * Walk a source file and collect `.rpc('fnName', { column: value })` calls
  * where the payload object literal has a key matching `targetColumn`.
  *
  * These are direct calls on the client object (not chained from `.from()`),
  * so they are handled separately.
  */
-function findRpcCalls(sf: SourceFile, column: string): CallExpression[] {
+function findRpcCalls(
+  sf: import('ts-morph').SourceFile,
+  column: string,
+): CallExpression[] {
   const results: CallExpression[] = [];
 
   const callExprs = sf.getDescendantsOfKind(SyntaxKind.CallExpression);
@@ -266,6 +117,19 @@ function findRpcCalls(sf: SourceFile, column: string): CallExpression[] {
   }
 
   return results;
+}
+
+/** Extract the literal string value of a chain argument, or null. */
+function literalArgValue(arg: import('ts-morph').Node): string | null {
+  if (arg.getKind() === SyntaxKind.StringLiteral) {
+    return (arg as import('ts-morph').StringLiteral).getLiteralValue();
+  }
+  if (arg.getKind() === SyntaxKind.NoSubstitutionTemplateLiteral) {
+    return (
+      arg as import('ts-morph').NoSubstitutionTemplateLiteral
+    ).getLiteralValue();
+  }
+  return null;
 }
 
 export async function columnReads(
@@ -319,13 +183,15 @@ export async function columnReads(
 
         for (const { method, callExpr } of chain) {
           const chainArgs = callExpr.getArguments();
-          let hit: { method: ColumnReadMethod; columnPath: string } | null =
-            null;
+          let hit: {
+            method: ColumnReadMethod;
+            columnPath: string;
+            chainMethod?: string;
+          } | null = null;
 
           if (method === 'select' && chainArgs.length >= 1) {
-            const arg = chainArgs[0];
-            if (arg.getKind() === SyntaxKind.StringLiteral) {
-              const selectStr = arg.getText().slice(1, -1);
+            const selectStr = literalArgValue(chainArgs[0]);
+            if (selectStr !== null) {
               if (selectStr === '*') {
                 // Wildcard select — may read the target column but we cannot
                 // confirm without runtime data. Emit a wildcard-confidence row.
@@ -335,12 +201,20 @@ export async function columnReads(
               }
             }
           } else if (method === 'eq' && chainArgs.length >= 1) {
-            const arg = chainArgs[0];
-            if (
-              arg.getKind() === SyntaxKind.StringLiteral &&
-              arg.getText().slice(1, -1) === args.column
-            ) {
+            if (literalArgValue(chainArgs[0]) === args.column) {
               hit = { method: 'eq', columnPath: args.column };
+            }
+          } else if (FILTER_METHODS.has(method) && chainArgs.length >= 1) {
+            if (literalArgValue(chainArgs[0]) === args.column) {
+              hit = {
+                method: 'filter',
+                columnPath: args.column,
+                chainMethod: method,
+              };
+            }
+          } else if (method === 'order' && chainArgs.length >= 1) {
+            if (literalArgValue(chainArgs[0]) === args.column) {
+              hit = { method: 'order', columnPath: args.column };
             }
           } else if (method === 'match' && chainArgs.length >= 1) {
             const arg = chainArgs[0];
@@ -370,6 +244,7 @@ export async function columnReads(
                 columnPath: hit.columnPath,
                 table: args.table,
                 isTyped,
+                ...(hit.chainMethod ? { chainMethod: hit.chainMethod } : {}),
               });
             }
           }

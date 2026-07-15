@@ -116,10 +116,15 @@ function findCallExpression(identifierNode: Node): CallExpression | null {
   // The identifier appears as the expression child of a CallExpression
   // when it is a callee, e.g. `sb(...)` — `sb` is the expression of the call.
   // Walk parents until we find a CallExpression whose expression is THIS node
-  // (or a chain ending in this node).
+  // (or a chain ending in this node). NewExpression (`new Foo(...)`) counts as
+  // a call site for class symbols; NonNullExpression (`sb!()`) is transparent.
   let current: Node | undefined = identifierNode.getParent();
   while (current) {
-    if (current.getKind() === SyntaxKind.CallExpression) {
+    const kind = current.getKind();
+    if (
+      kind === SyntaxKind.CallExpression ||
+      kind === SyntaxKind.NewExpression
+    ) {
       const ce = current as CallExpression;
       // The identifier must be the callee, not an argument.
       if (
@@ -129,12 +134,18 @@ function findCallExpression(identifierNode: Node): CallExpression | null {
           .some((id) => id === identifierNode) ||
         ce.getExpression() === identifierNode
       ) {
+        // NewExpression shares the relevant CallExpression surface
+        // (getExpression/getArguments); callers only need position data.
         return ce;
       }
       return null;
     }
-    // PropertyAccessExpression is part of a chain like `obj.fn(…)` — keep walking up.
-    if (current.getKind() !== SyntaxKind.PropertyAccessExpression) {
+    // PropertyAccessExpression is part of a chain like `obj.fn(…)`;
+    // NonNullExpression wraps `sb!()` — keep walking up through both.
+    if (
+      kind !== SyntaxKind.PropertyAccessExpression &&
+      kind !== SyntaxKind.NonNullExpression
+    ) {
       return null;
     }
     current = current.getParent();

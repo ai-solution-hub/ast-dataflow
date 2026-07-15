@@ -51,31 +51,72 @@ interface AllowlistEntry {
 
 // ---------------------------------------------------------------------------
 // Allowlist loader
+//
+// Primary location is the repo-root dotfile (same convention as
+// `.type-drift-baseline.json`). The legacy `docs/specs/…` path is kept as a
+// fallback — the spec tree moved to the private docs-site (ID-68), so the
+// legacy path no longer exists in this repo and previously made the allowlist
+// silently dead.
 // ---------------------------------------------------------------------------
-function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
-  const path = join(
-    repoRoot,
+const ALLOWLIST_PATHS = [
+  ['.type-drift-allowlist.json'],
+  [
     'docs',
     'specs',
     'id-16-ast-dataflow-tool',
     'type-safety-pipeline',
     'allowlist.json',
-  );
-  if (!existsSync(path)) return [];
-  try {
-    const raw = readFileSync(path, 'utf8');
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (e): e is AllowlistEntry =>
-        typeof e === 'object' &&
-        e !== null &&
-        typeof e.interface === 'string' &&
-        typeof e.reason === 'string',
-    );
-  } catch {
-    return null;
+  ],
+] as const;
+
+function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
+  for (const segments of ALLOWLIST_PATHS) {
+    const path = join(repoRoot, ...segments);
+    if (!existsSync(path)) continue;
+    try {
+      const raw = readFileSync(path, 'utf8');
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter(
+        (e): e is AllowlistEntry =>
+          typeof e === 'object' &&
+          e !== null &&
+          typeof e.interface === 'string' &&
+          typeof e.reason === 'string',
+      );
+    } catch {
+      return null;
+    }
   }
+  return [];
+}
+
+// ---------------------------------------------------------------------------
+// Scope glob matcher
+//
+// `--scope` accepts comma-separated glob patterns (e.g. 'app/api/**,lib/**').
+// Only files matching the globs are inspected for fetcher/route call sites;
+// interface declarations are always scanned regardless of scope.
+// Supported syntax: `**` (any path segments), `*` (within one segment).
+// ---------------------------------------------------------------------------
+function buildScopeMatcher(
+  scope: string | undefined,
+): (rel: string) => boolean {
+  if (!scope) return () => true;
+  const regexes = scope
+    .split(',')
+    .map((g) => g.trim())
+    .filter(Boolean)
+    .map((glob) => {
+      const source = glob
+        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
+        .replace(/\*\*\//g, '(?:[^/]+/)*')
+        .replace(/\*\*/g, '.*')
+        .replace(/(?<![.\])])\*/g, '[^/]*');
+      return new RegExp(`^${source}$`);
+    });
+  if (regexes.length === 0) return () => true;
+  return (rel: string) => regexes.some((r) => r.test(rel));
 }
 
 // ---------------------------------------------------------------------------
@@ -424,19 +465,20 @@ export async function typeDriftDetect(
     allowlist.map((e) => [e.interface, e.reason]),
   );
 
+  const inScope = buildScopeMatcher(args.scope);
+
   // D-25: Check for absent or empty fetchers surface.
-  // If lib/query/fetchers.ts does not exist or contains zero fetchJson /
-  // mutationFetchJson calls, short-circuit and return a single informational row.
-  const fetchersPath = join(repoRoot, 'lib', 'query', 'fetchers.ts');
-  const fetchersSourceFile = project.getSourceFile(fetchersPath);
-  const hasFetcherCalls =
-    fetchersSourceFile !== undefined &&
-    fetchersSourceFile
-      .getDescendantsOfKind(SyntaxKind.CallExpression)
-      .some((call) => {
-        const exprText = call.getExpression().getText();
-        return exprText === 'fetchJson' || exprText === 'mutationFetchJson';
-      });
+  // Short-circuit with a single informational row when the project contains
+  // zero fetchJson / mutationFetchJson calls anywhere. (Previously only
+  // lib/query/fetchers.ts was checked, which returned a false "no fetchers"
+  // sentinel the moment fetcher calls moved to sibling modules while the
+  // reference scan below was already project-wide.)
+  const hasFetcherCalls = project.getSourceFiles().some((sf) =>
+    sf.getDescendantsOfKind(SyntaxKind.CallExpression).some((call) => {
+      const exprText = call.getExpression().getText();
+      return exprText === 'fetchJson' || exprText === 'mutationFetchJson';
+    }),
+  );
 
   if (!hasFetcherCalls) {
     return {
@@ -564,6 +606,10 @@ export async function typeDriftDetect(
           continue;
         }
 
+        // --scope: only files matching the globs are inspected for
+        // fetcher/route call sites (declarations are always scanned).
+        if (!inScope(relPath)) continue;
+
         // Check if this reference is a fetcher generic argument
         if (isFetcherGenericArgument(node)) {
           const url = extractFetcherUrl(node);
@@ -621,6 +667,7 @@ export async function typeDriftDetect(
         if (!relPath.startsWith('app/api/') || !relPath.endsWith('route.ts')) {
           continue;
         }
+        if (!inScope(relPath)) continue;
 
         if (routePathMatches(candidateRoutePath, relPath)) {
           // Check if this route is already in candidateRoutes or routeUses
@@ -683,19 +730,24 @@ export async function typeDriftDetect(
         ? true
         : undefined;
 
-    // Build remediation hint
-    const remediationHint = buildRemediationHint(
-      candidate.name,
-      classification,
-      fetcherUses,
-      deduplicatedCandidateRoutes,
-    );
-
     // Allowlist check — overrides fetcher-only classification
     const isAllowlisted = allowlistSet.has(candidate.name);
     const allowlistedField = isAllowlisted
       ? { reason: allowlistReasons.get(candidate.name) ?? '' }
       : undefined;
+
+    // Build remediation hint. For allowlisted rows the hint must match the
+    // overridden classification — previously an allowlisted fetcher-only row
+    // was emitted as 'unused' while its hint still said "add a return type
+    // annotation".
+    const remediationHint = isAllowlisted
+      ? `${candidate.name} is allowlisted (${allowlistedField?.reason ?? 'no reason recorded'}) — no action needed.`
+      : buildRemediationHint(
+          candidate.name,
+          classification,
+          fetcherUses,
+          deduplicatedCandidateRoutes,
+        );
 
     totalEstimated++;
 

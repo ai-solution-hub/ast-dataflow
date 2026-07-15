@@ -28,9 +28,16 @@ const DEFAULT_LIMIT = 200;
  *  6. Otherwise (RHS, argument, identifier read) → `read`
  */
 function classifyKind(node: Node): ReferenceKind {
-  // Rule 1: type-only import (`import type { X }`)
+  // Rule 1: type-only import — either statement-level (`import type { X }`)
+  // or inline specifier (`import { type X, y }`).
   const importDecl = node.getFirstAncestorByKind(SyntaxKind.ImportDeclaration);
   if (importDecl?.isTypeOnly()) {
+    return 'typeOnly';
+  }
+  const importSpecifier = node.getFirstAncestorByKind(
+    SyntaxKind.ImportSpecifier,
+  );
+  if (importSpecifier?.isTypeOnly()) {
     return 'typeOnly';
   }
 

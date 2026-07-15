@@ -128,16 +128,20 @@ function resolveTargetFilePath(
   }
 
   // Fallback: interpret modulePath as repo-relative path.
-  const absPath = isAbsolute(modulePath)
-    ? modulePath
-    : resolve(repoRoot, modulePath);
+  const strippedInput = stripAliasPrefix(modulePath, aliasPrefixes);
+  const absPath = isAbsolute(strippedInput)
+    ? strippedInput
+    : resolve(repoRoot, strippedInput);
   const direct = project.getSourceFile(absPath);
   if (direct) return direct.getFilePath();
 
-  // Try without extension.
-  const withTs = absPath.endsWith('.ts') ? absPath : absPath + '.ts';
-  const withExtension = project.getSourceFile(withTs);
-  if (withExtension) return withExtension.getFilePath();
+  // Try resolution the way the module resolver would: append extensions and
+  // index files. Covers .tsx components and directory imports with zero
+  // importers in the corpus (the loop above only finds already-imported files).
+  for (const suffix of ['.ts', '.tsx', '/index.ts', '/index.tsx']) {
+    const candidate = project.getSourceFile(absPath + suffix);
+    if (candidate) return candidate.getFilePath();
+  }
 
   return null;
 }

@@ -119,6 +119,15 @@ export function resolveSymbol(
   for (const vd of sf.getVariableDeclarations()) {
     if (vd.getName() === namePart) candidates.push(vd);
   }
+  for (const iface of sf.getInterfaces()) {
+    if (iface.getName() === namePart) candidates.push(iface);
+  }
+  for (const ta of sf.getTypeAliases()) {
+    if (ta.getName() === namePart) candidates.push(ta);
+  }
+  for (const en of sf.getEnums()) {
+    if (en.getName() === namePart) candidates.push(en);
+  }
   for (const ed of sf.getExportedDeclarations().get(namePart) ?? []) {
     if ('findReferences' in ed) {
       candidates.push(ed as ReferenceFindableNode & Node);
@@ -127,7 +136,7 @@ export function resolveSymbol(
 
   if (candidates.length === 0) {
     throw new AstResolverError(
-      `Symbol "${namePart}" not found in ${filePart}. Looked at functions, classes, methods, variables, and named exports.`,
+      `Symbol "${namePart}" not found in ${filePart}. Looked at functions, classes, methods, variables, interfaces, type aliases, enums, and named exports.`,
       'out_of_corpus',
       'Verify the symbol name is exported or declared in the specified file.',
     );
@@ -153,7 +162,19 @@ export function resolveSymbol(
       c.getKind() === SyntaxKind.MethodDeclaration,
   );
 
-  if (!preferredFn && unique.length > 1) {
+  // Value/type declaration merging — e.g. the zod idiom
+  // `export const Foo = z.object(…)` + `export type Foo = z.infer<typeof Foo>`
+  // legitimately shares one name across a value and a type declaration.
+  // Prefer the single value declaration (runtime references are the usual
+  // question); type-position-only references are undercounted in this case.
+  const TYPE_DECL_KINDS = new Set([
+    SyntaxKind.InterfaceDeclaration,
+    SyntaxKind.TypeAliasDeclaration,
+  ]);
+  const valueDecls = unique.filter((c) => !TYPE_DECL_KINDS.has(c.getKind()));
+  const preferredValue = valueDecls.length === 1 ? valueDecls[0] : undefined;
+
+  if (!preferredFn && !preferredValue && unique.length > 1) {
     throw new AstResolverError(
       `Ambiguous symbol: "${namePart}" in ${filePart} resolves to ${unique.length} non-function declarations.`,
       'ambiguous_symbol',
@@ -162,7 +183,7 @@ export function resolveSymbol(
   }
 
   return {
-    declaration: preferredFn ?? unique[0],
+    declaration: preferredFn ?? preferredValue ?? unique[0],
     declarationFile: filePart,
     declarationName: namePart,
   };
@@ -174,7 +195,17 @@ export function resolveSymbol(
  * named binding is found.
  */
 export function resolveObjectLiteralContainerName(objLiteral: Node): string {
-  const parent = objLiteral.getParent();
+  // `{...} as const`, `{...} satisfies T`, and `({...})` wrap the literal in
+  // As/Satisfies/Parenthesized expressions between it and the declaration.
+  let parent = objLiteral.getParent();
+  while (
+    parent &&
+    (parent.isKind(SyntaxKind.AsExpression) ||
+      parent.isKind(SyntaxKind.SatisfiesExpression) ||
+      parent.isKind(SyntaxKind.ParenthesizedExpression))
+  ) {
+    parent = parent.getParent();
+  }
   if (parent?.isKind(SyntaxKind.VariableDeclaration)) {
     return (parent as { getName: () => string }).getName();
   }
@@ -188,7 +219,8 @@ export function resolveObjectLiteralContainerName(objLiteral: Node): string {
  *
  * Returns one of:
  *   - "fn:<name>"           — named function declaration or arrow assigned to var
- *   - "method:<Class>.<m>"  — class method or object property method
+ *   - "method:<Class>.<m>"  — class method, accessor, constructor, or object
+ *                             property method
  *   - "moduleTopLevel"      — at module scope (no enclosing function)
  */
 export function findEnclosing(node: Node): string {
@@ -199,10 +231,12 @@ export function findEnclosing(node: Node): string {
         const name = (current as FunctionDeclaration).getName();
         return name ? `fn:${name}` : 'fn:<anonymous>';
       }
-      case SyntaxKind.MethodDeclaration: {
+      case SyntaxKind.MethodDeclaration:
+      case SyntaxKind.GetAccessor:
+      case SyntaxKind.SetAccessor: {
         const m = current as MethodDeclaration;
         const parent = m.getParent();
-        // Class method: parent has getName() and is not an ObjectLiteralExpression.
+        // Class member: parent has getName() and is not an ObjectLiteralExpression.
         const isClassParent =
           parent &&
           'getName' in parent &&
@@ -215,11 +249,35 @@ export function findEnclosing(node: Node): string {
             : '<Object>';
         return `method:${containerName}.${m.getName()}`;
       }
+      case SyntaxKind.Constructor:
+      case SyntaxKind.ClassStaticBlockDeclaration: {
+        const cls = current.getParent();
+        const className =
+          cls && 'getName' in cls
+            ? ((cls as { getName: () => string | undefined }).getName() ??
+              '<anonymous>')
+            : '<anonymous>';
+        const memberName =
+          current.getKind() === SyntaxKind.Constructor
+            ? 'constructor'
+            : '<static>';
+        return `method:${className}.${memberName}`;
+      }
       case SyntaxKind.PropertyAssignment: {
-        // Arrow function or expression assigned as object property: { foo: () => ... }
-        const propName = current
-          .asKindOrThrow(SyntaxKind.PropertyAssignment)
-          .getName();
+        // Function assigned as object property: { foo: () => ... }.
+        // Only claim the property as a "method" when its value IS a function —
+        // for non-function values ({ foo: someRef }) keep walking so the real
+        // enclosing function is reported instead.
+        const propAssign = current.asKindOrThrow(SyntaxKind.PropertyAssignment);
+        const initialiser = propAssign.getInitializer();
+        const initKind = initialiser?.getKind();
+        if (
+          initKind !== SyntaxKind.ArrowFunction &&
+          initKind !== SyntaxKind.FunctionExpression
+        ) {
+          break;
+        }
+        const propName = propAssign.getName();
         const objLiteral = current.getParent();
         const containerName = objLiteral
           ? resolveObjectLiteralContainerName(objLiteral)
@@ -317,6 +375,7 @@ export function isTestFilePath(relPath: string): boolean {
   return (
     TEST_DIR_PREFIXES.some((p) => relPath.startsWith(p)) ||
     relPath.includes('/test/') ||
+    relPath.includes('/__tests__/') ||
     TEST_SUFFIX_PATTERNS.some((s) => relPath.endsWith(s))
   );
 }
@@ -350,6 +409,7 @@ export function walkBarrelChain(
 
     // Check every `export { X } from '...'` or `export * from '...'` in this file.
     const exportDecls: ExportDeclaration[] = sf.getExportDeclarations();
+    let barrelExportsOurSymbol = false;
     for (const exportDecl of exportDecls) {
       const moduleSpecifier = exportDecl.getModuleSpecifierSourceFile();
       if (!moduleSpecifier) continue;
@@ -357,53 +417,49 @@ export function walkBarrelChain(
 
       // This file re-exports from our source file.
       // Check whether the specific symbol is re-exported (not just any symbol).
-      let exportsOurSymbol = false;
-
       if (exportDecl.isNamespaceExport()) {
         // `export * from '...'` — all exports are carried through.
-        exportsOurSymbol = true;
+        barrelExportsOurSymbol = true;
       } else {
         // `export { X, Y } from '...'`
         const namedExports = exportDecl.getNamedExports();
-        exportsOurSymbol = namedExports.some((ne) => {
-          // The original name in the source file (before any rename).
-          // For `export { foo as bar }`, getName() returns 'foo' (the alias
-          // used in the barrel), but getAliasNode()?.getText() is 'bar'.
-          // We match on the original source name, which is getName().
-          const originalName = ne.getName();
-          return originalName === symbolName;
-        });
-      }
-
-      if (!exportsOurSymbol) continue;
-
-      // This barrel re-exports our symbol. Record it.
-      if (!chain.includes(barrelRelPath)) {
-        chain.push(barrelRelPath);
-      }
-
-      // Now check who imports from this barrel file.
-      const barrelAbsPath = sf.getFilePath();
-      for (const consumer of project.getSourceFiles()) {
-        if (consumer.getFilePath() === barrelAbsPath) continue;
-        if (consumer.getFilePath() === sourceAbsPath) continue;
-
-        const consumerRelPath = toRepoRelative(
-          repoRoot,
-          consumer.getFilePath(),
+        // The original name in the source file (before any rename).
+        // For `export { foo as bar }`, getName() returns 'foo' (the alias
+        // used in the barrel), but getAliasNode()?.getText() is 'bar'.
+        // We match on the original source name, which is getName().
+        barrelExportsOurSymbol = namedExports.some(
+          (ne) => ne.getName() === symbolName,
         );
-        const importsBarrel = consumer.getImportDeclarations().some((imp) => {
-          const resolved = imp.getModuleSpecifierSourceFile();
-          return resolved?.getFilePath() === barrelAbsPath;
-        });
+      }
+      if (barrelExportsOurSymbol) break;
+    }
 
-        if (!importsBarrel) continue;
+    if (!barrelExportsOurSymbol) continue;
 
-        if (isTestFilePath(consumerRelPath)) {
-          if (!excludeTests) testOnlyImporters++;
-        } else {
-          reachableImporters++;
-        }
+    // This barrel re-exports our symbol. Record it.
+    if (!chain.includes(barrelRelPath)) {
+      chain.push(barrelRelPath);
+    }
+
+    // Now check who imports from this barrel file — counted once per barrel,
+    // regardless of how many matching export declarations it contains.
+    const barrelAbsPath = sf.getFilePath();
+    for (const consumer of project.getSourceFiles()) {
+      if (consumer.getFilePath() === barrelAbsPath) continue;
+      if (consumer.getFilePath() === sourceAbsPath) continue;
+
+      const consumerRelPath = toRepoRelative(repoRoot, consumer.getFilePath());
+      const importsBarrel = consumer.getImportDeclarations().some((imp) => {
+        const resolved = imp.getModuleSpecifierSourceFile();
+        return resolved?.getFilePath() === barrelAbsPath;
+      });
+
+      if (!importsBarrel) continue;
+
+      if (isTestFilePath(consumerRelPath)) {
+        if (!excludeTests) testOnlyImporters++;
+      } else {
+        reachableImporters++;
       }
     }
   }

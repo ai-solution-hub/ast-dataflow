@@ -118,13 +118,33 @@ export interface ColumnReadsArgs {
   excludeTests?: boolean;
 }
 
-export type ColumnReadMethod = 'select' | 'eq' | 'match' | 'rpc-payload';
+/**
+ * - select      — `.select('…col…')` or `.select('*')` (wildcard confidence).
+ * - eq          — `.eq('col', v)` equality filter (kept as a dedicated value
+ *                 for backwards compatibility).
+ * - filter      — any other filter method naming the column as its first
+ *                 string argument (`.neq/.gt/.gte/.lt/.lte/.like/.ilike/.is/
+ *                 .in/.contains/.containedBy/.overlaps/.textSearch`); the
+ *                 concrete method is reported in `chainMethod`.
+ * - order       — `.order('col')` sort key.
+ * - match       — `.match({ col: v })` object filter.
+ * - rpc-payload — `.rpc('fn', { col: v })` payload key.
+ */
+export type ColumnReadMethod =
+  | 'select'
+  | 'eq'
+  | 'filter'
+  | 'order'
+  | 'match'
+  | 'rpc-payload';
 
 export interface ColumnReadResult extends BaseResult {
   method: ColumnReadMethod;
   columnPath: string; // the matched column literal or object key
   table: string; // echo of the table arg
   isTyped: boolean; // true if the Supabase client is type-instantiated with a row type
+  /** For method 'filter': the concrete chain method (e.g. 'in', 'gte'). */
+  chainMethod?: string;
 }
 
 export interface ColumnWritesArgs {

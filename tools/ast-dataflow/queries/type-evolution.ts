@@ -11,6 +11,7 @@ import {
   toRepoRelative,
   buildErrorResponse,
   AstResolverError,
+  isTestFilePath,
 } from '../resolve';
 
 const DEFAULT_LIMIT = 200;
@@ -278,6 +279,7 @@ export async function typeEvolution(
 ): Promise<QueryResponse<TypeEvolutionResult>> {
   const started = Date.now();
   const limit = args.limit ?? DEFAULT_LIMIT;
+  const excludeTests = args.excludeTests ?? false;
 
   let resolved: ReturnType<typeof resolveSymbol>;
 
@@ -304,12 +306,20 @@ export async function typeEvolution(
     for (const sf of project.getSourceFiles()) {
       const exported = sf.getExportedDeclarations().get(args.type);
       if (exported && exported.length > 0) {
-        const decl = exported[0];
+        // Prefer a declaration that actually lives in this file — otherwise a
+        // barrel that merely re-exports the type gets reported as its home.
+        const decl =
+          exported.find(
+            (d) => d.getSourceFile().getFilePath() === sf.getFilePath(),
+          ) ?? exported[0];
         if ('findReferences' in decl) {
           found = {
             declaration:
               decl as import('../resolve').ResolvedSymbol['declaration'],
-            declarationFile: toRepoRelative(repoRoot, sf.getFilePath()),
+            declarationFile: toRepoRelative(
+              repoRoot,
+              decl.getSourceFile().getFilePath(),
+            ),
             declarationName: args.type,
           };
           break;
@@ -345,6 +355,9 @@ export async function typeEvolution(
 
       if (isDefinition) continue; // skip declaration site
 
+      const relPath = toRepoRelative(repoRoot, sf.getFilePath());
+      if (excludeTests && isTestFilePath(relPath)) continue;
+
       const kind = classifyTypeRefKind(node);
       if (kind === null) continue; // unclassifiable
 
@@ -353,7 +366,7 @@ export async function typeEvolution(
 
       const lineCol = sf.getLineAndColumnAtPos(node.getStart());
       rows.push({
-        file: toRepoRelative(repoRoot, sf.getFilePath()),
+        file: relPath,
         line: lineCol.line,
         column: lineCol.column,
         confidence: 'exact',
@@ -375,13 +388,16 @@ export async function typeEvolution(
   );
 
   for (const { node, kind } of propertySites) {
+    const sf = node.getSourceFile();
+    const relPath = toRepoRelative(repoRoot, sf.getFilePath());
+    if (excludeTests && isTestFilePath(relPath)) continue;
+
     totalEstimated++;
     if (rows.length >= limit) continue;
 
-    const sf = node.getSourceFile();
     const lineCol = sf.getLineAndColumnAtPos(node.getStart());
     rows.push({
-      file: toRepoRelative(repoRoot, sf.getFilePath()),
+      file: relPath,
       line: lineCol.line,
       column: lineCol.column,
       confidence: 'exact',
