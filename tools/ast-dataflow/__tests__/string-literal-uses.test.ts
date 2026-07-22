@@ -6,7 +6,7 @@ import { stringLiteralUses, createProject } from '@/tools/ast-dataflow';
  * string-literal-uses query — Vitest suite
  *
  * Ground-truth fixture set under fixtures/12-string-literal-uses/.
- * Tests verify real behaviour per docs/reference/test-philosophy.md:
+ * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
  *   - Assertions are on the result shape and counts (not call-chain internals).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) + find() antipattern.
  *   - expect.arrayContaining + expect.objectContaining for set-membership assertions.

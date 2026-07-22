@@ -25,7 +25,7 @@ import {
  *   consumer-renamed.ts       — correctly-updated consumer (no misses)
  *   test-with-missed-string.ts — test file with two unmissed string literals
  *
- * Tests follow docs/reference/test-philosophy.md:
+ * Tests follow docs/reference/testing/test-philosophy.md:
  *   - Assertions on result shape and counts (not internal call-chain).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) antipattern.
  *   - Test titles read like product specs (what the operator observes).

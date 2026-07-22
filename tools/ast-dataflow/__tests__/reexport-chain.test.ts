@@ -6,7 +6,7 @@ import { reexportChain, createProject } from '@/tools/ast-dataflow';
  * reexport-chain query — Vitest suite
  *
  * Ground-truth fixture set under fixtures/10-reexport-chain/.
- * Tests verify real behaviour per docs/reference/test-philosophy.md:
+ * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
  *   - Assertions are on the result shape and counts (not on call-chain internals).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) + find() antipattern.
  *   - Test titles read like product specs (what the user observes), not implementation.

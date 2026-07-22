@@ -10,7 +10,7 @@ import type { TypeDriftResult } from '@/tools/ast-dataflow';
  *
  * Ground-truth fixture set under fixtures/17-type-drift/.
  *
- * Tests verify real behaviour per docs/reference/test-philosophy.md:
+ * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
  *   - Pin exact counts — no toBeGreaterThan(0).
  *   - expect.arrayContaining([expect.objectContaining({...})]) for set
  *     membership assertions.
