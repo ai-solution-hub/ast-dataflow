@@ -6,7 +6,9 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
+import { truncateSpatial } from '../truncate';
 import {
+  clientBindingHasExplicitTypeArgs,
   collectChain,
   detectIsTyped,
   findFromCalls,
@@ -20,9 +22,10 @@ const DEFAULT_LIMIT = 200;
  * read/filter sites (not payload writes). `.eq()` keeps its dedicated method
  * value for backwards compatibility; the rest report as `method: 'filter'`
  * with the actual chain method recorded in `columnPath`'s row context via
- * `chainMethod` (see ColumnReadResult).
+ * `chainMethod` (see ColumnReadResult). Exported for schema-coverage, which
+ * reuses the read-side chain semantics in its one-pass scan.
  */
-const FILTER_METHODS: ReadonlySet<string> = new Set([
+export const FILTER_METHODS: ReadonlySet<string> = new Set([
   'neq',
   'gt',
   'gte',
@@ -54,7 +57,7 @@ const FILTER_METHODS: ReadonlySet<string> = new Set([
  *   top-level tokens are matched. Nested blocks are stripped iteratively so
  *   relations-within-relations do not leave stray tokens.
  */
-function selectContainsColumn(
+export function selectContainsColumn(
   selectStr: string,
   targetColumn: string,
 ): boolean {
@@ -120,7 +123,7 @@ function findRpcCalls(
 }
 
 /** Extract the literal string value of a chain argument, or null. */
-function literalArgValue(arg: import('ts-morph').Node): string | null {
+export function literalArgValue(arg: import('ts-morph').Node): string | null {
   if (arg.getKind() === SyntaxKind.StringLiteral) {
     return (arg as import('ts-morph').StringLiteral).getLiteralValue();
   }
@@ -165,7 +168,6 @@ export async function columnReads(
   const excludeTests = args.excludeTests ?? false;
 
   const rows: ColumnReadResult[] = [];
-  let totalEstimated = 0;
 
   try {
     for (const sf of project.getSourceFiles()) {
@@ -177,7 +179,7 @@ export async function columnReads(
       const fromCalls = findFromCalls(sf, args.table);
 
       for (const fromCallExpr of fromCalls) {
-        const isTyped = detectIsTyped(fromCallExpr, args.table);
+        const isTyped = detectIsTyped(fromCallExpr);
         const confidence = isTyped ? ('exact' as const) : ('indirect' as const);
         const chain = collectChain(fromCallExpr);
 
@@ -228,25 +230,22 @@ export async function columnReads(
           }
 
           if (hit) {
-            totalEstimated++;
-            if (rows.length < limit) {
-              const lineCol = sf.getLineAndColumnAtPos(callExpr.getStart());
-              // Wildcard selects always use 'wildcard' confidence regardless of
-              // client typing — we cannot confirm the specific column is read.
-              const rowConfidence =
-                hit.columnPath === '*' ? ('wildcard' as const) : confidence;
-              rows.push({
-                file: relPath,
-                line: lineCol.line,
-                column: lineCol.column,
-                confidence: rowConfidence,
-                method: hit.method,
-                columnPath: hit.columnPath,
-                table: args.table,
-                isTyped,
-                ...(hit.chainMethod ? { chainMethod: hit.chainMethod } : {}),
-              });
-            }
+            const lineCol = sf.getLineAndColumnAtPos(callExpr.getStart());
+            // Wildcard selects always use 'wildcard' confidence regardless of
+            // client typing — we cannot confirm the specific column is read.
+            const rowConfidence =
+              hit.columnPath === '*' ? ('wildcard' as const) : confidence;
+            rows.push({
+              file: relPath,
+              line: lineCol.line,
+              column: lineCol.column,
+              confidence: rowConfidence,
+              method: hit.method,
+              columnPath: hit.columnPath,
+              table: args.table,
+              isTyped,
+              ...(hit.chainMethod ? { chainMethod: hit.chainMethod } : {}),
+            });
           }
         }
       }
@@ -254,51 +253,28 @@ export async function columnReads(
       // ── .rpc('fn', { column: value }) hits ───────────────────────────────
       const rpcCalls = findRpcCalls(sf, args.column);
       for (const rpcCallExpr of rpcCalls) {
-        // Typed heuristic for rpc: check if the client has a type arg.
-        // We look at the expression of the rpc call (the client variable).
+        // Typed heuristic for rpc: the client binding must carry an explicit
+        // type argument — .rpc() has no .from() return type to inspect.
         let rpcIsTyped = false;
-        try {
-          const rpcExpr = rpcCallExpr.getExpression();
-          if (rpcExpr.getKind() === SyntaxKind.PropertyAccessExpression) {
-            const clientExpr = (
-              rpcExpr as import('ts-morph').PropertyAccessExpression
-            ).getExpression();
-            const symbol = clientExpr.getType().getSymbol();
-            if (symbol) {
-              for (const decl of symbol.getDeclarations()) {
-                if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-                  const init = (
-                    decl as import('ts-morph').VariableDeclaration
-                  ).getInitializer();
-                  if (init?.getKind() === SyntaxKind.CallExpression) {
-                    if (
-                      (init as CallExpression).getTypeArguments().length > 0
-                    ) {
-                      rpcIsTyped = true;
-                    }
-                  }
-                }
-              }
-            }
-          }
-        } catch {
-          // Fall through — rpcIsTyped stays false.
+        const rpcExpr = rpcCallExpr.getExpression();
+        if (rpcExpr.getKind() === SyntaxKind.PropertyAccessExpression) {
+          const clientExpr = (
+            rpcExpr as import('ts-morph').PropertyAccessExpression
+          ).getExpression();
+          rpcIsTyped = clientBindingHasExplicitTypeArgs(clientExpr);
         }
 
-        totalEstimated++;
-        if (rows.length < limit) {
-          const lineCol = sf.getLineAndColumnAtPos(rpcCallExpr.getStart());
-          rows.push({
-            file: relPath,
-            line: lineCol.line,
-            column: lineCol.column,
-            confidence: rpcIsTyped ? 'exact' : 'indirect',
-            method: 'rpc-payload',
-            columnPath: args.column,
-            table: args.table,
-            isTyped: rpcIsTyped,
-          });
-        }
+        const lineCol = sf.getLineAndColumnAtPos(rpcCallExpr.getStart());
+        rows.push({
+          file: relPath,
+          line: lineCol.line,
+          column: lineCol.column,
+          confidence: rpcIsTyped ? 'exact' : 'indirect',
+          method: 'rpc-payload',
+          columnPath: args.column,
+          table: args.table,
+          isTyped: rpcIsTyped,
+        });
       }
     }
   } catch (err) {
@@ -314,12 +290,13 @@ export async function columnReads(
     );
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'column-reads',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

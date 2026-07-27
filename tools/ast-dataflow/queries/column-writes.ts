@@ -6,6 +6,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
+import { truncateSpatial } from '../truncate';
 import {
   collectChain,
   detectIsTyped,
@@ -98,11 +99,11 @@ function resolveOneHopObjectLiteral(
  * every element; non-object-literal elements (identifiers, spreads, calls)
  * prevent ruling the column out and downgrade to `indirect`.
  */
-type WriteArgResult =
+export type WriteArgResult =
   | { found: false }
   | { found: true; confidence: 'exact' | 'indirect' };
 
-function inspectWriteArg(
+export function inspectWriteArg(
   argNode: Node,
   targetKey: string,
   isTyped: boolean,
@@ -204,7 +205,6 @@ export async function columnWrites(
   const excludeTests = args.excludeTests ?? false;
 
   const rows: ColumnWriteResult[] = [];
-  let totalEstimated = 0;
 
   try {
     for (const sf of project.getSourceFiles()) {
@@ -215,7 +215,7 @@ export async function columnWrites(
       const fromCalls = findFromCalls(sf, args.table);
 
       for (const fromCallExpr of fromCalls) {
-        const isTyped = detectIsTyped(fromCallExpr, args.table);
+        const isTyped = detectIsTyped(fromCallExpr);
         const chain = collectChain(fromCallExpr);
 
         for (const { method, callExpr } of chain) {
@@ -233,20 +233,17 @@ export async function columnWrites(
 
           if (!inspection.found) continue;
 
-          totalEstimated++;
-          if (rows.length < limit) {
-            const lineCol = sf.getLineAndColumnAtPos(callExpr.getStart());
-            rows.push({
-              file: relPath,
-              line: lineCol.line,
-              column: lineCol.column,
-              confidence: inspection.confidence,
-              method: method as ColumnWriteMethod,
-              columnPath: args.column,
-              table: args.table,
-              isTyped,
-            });
-          }
+          const lineCol = sf.getLineAndColumnAtPos(callExpr.getStart());
+          rows.push({
+            file: relPath,
+            line: lineCol.line,
+            column: lineCol.column,
+            confidence: inspection.confidence,
+            method: method as ColumnWriteMethod,
+            columnPath: args.column,
+            table: args.table,
+            isTyped,
+          });
         }
       }
     }
@@ -262,12 +259,13 @@ export async function columnWrites(
     );
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'column-writes',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

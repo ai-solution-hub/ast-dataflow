@@ -1,14 +1,20 @@
 // Minimal Supabase client stub for fixture use — no real @supabase/supabase-js needed.
-// The column-reads query detects typed-vs-untyped by checking whether createClient
-// is called with a Database type parameter at the call site.
+// Mirrors supabase-js 2.105.x builder generics: `.from(table)` echoes the
+// table-name literal into the builder's type arguments EVEN when DB = any
+// (untyped client) — only the schema-derived arguments degrade to `any`.
+// detectIsTyped must therefore inspect the Relation type argument's `Row`
+// shape, never the return-type text.
 
-export interface SupabaseClient<DB = unknown> {
-  from<T extends string>(
-    table: T,
+type SchemaOf<DB> = DB extends { public: infer S } ? S : any;
+
+export interface SupabaseClient<DB = any> {
+  from<TN extends string & keyof SchemaOf<DB>['Tables']>(
+    table: TN,
   ): QueryBuilder<
-    DB extends { public: { Tables: Record<T, { Row: infer R }> } }
-      ? R
-      : Record<string, unknown>
+    { PostgrestVersion: '12' },
+    SchemaOf<DB>,
+    SchemaOf<DB>['Tables'][TN],
+    TN
   >;
   rpc(
     fn: string,
@@ -16,16 +22,35 @@ export interface SupabaseClient<DB = unknown> {
   ): Promise<{ data: unknown; error: unknown }>;
 }
 
-export interface QueryBuilder<Row> {
-  select(columns: string): QueryBuilder<Row>;
-  eq(column: string, value: unknown): QueryBuilder<Row>;
-  match(query: Record<string, unknown>): QueryBuilder<Row>;
-  order(column: string, opts?: { ascending?: boolean }): QueryBuilder<Row>;
-  single(): Promise<{ data: Row | null; error: unknown }>;
-  then(resolve: (v: { data: Row[] | null; error: unknown }) => void): void;
+type RowOf<Relation> = Relation extends { Row: infer R }
+  ? R
+  : Record<string, unknown>;
+
+export interface QueryBuilder<
+  ClientOptions,
+  Schema,
+  Relation,
+  TN extends string,
+> {
+  select(columns: string): QueryBuilder<ClientOptions, Schema, Relation, TN>;
+  eq(
+    column: string,
+    value: unknown,
+  ): QueryBuilder<ClientOptions, Schema, Relation, TN>;
+  match(
+    query: Record<string, unknown>,
+  ): QueryBuilder<ClientOptions, Schema, Relation, TN>;
+  order(
+    column: string,
+    opts?: { ascending?: boolean },
+  ): QueryBuilder<ClientOptions, Schema, Relation, TN>;
+  single(): Promise<{ data: RowOf<Relation> | null; error: unknown }>;
+  then(
+    resolve: (v: { data: RowOf<Relation>[] | null; error: unknown }) => void,
+  ): void;
 }
 
-export function createClient<DB = unknown>(
+export function createClient<DB = any>(
   _url: string,
   _key: string,
 ): SupabaseClient<DB> {

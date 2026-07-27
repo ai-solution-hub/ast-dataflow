@@ -2,6 +2,7 @@ import { resolve } from 'node:path';
 import { Project } from 'ts-morph';
 
 export { callers } from './queries/callers';
+export { callees } from './queries/callees';
 export { importers } from './queries/importers';
 export { references } from './queries/references';
 export { columnReads } from './queries/column-reads';
@@ -10,6 +11,10 @@ export { deadExports } from './queries/dead-exports';
 export { AstResolverError } from './resolve';
 export type {
   BaseResult,
+  CalleeCallKind,
+  CalleeResult,
+  CalleesArgs,
+  CalleesResponse,
   CallSiteResult,
   CallResolution,
   CallersArgs,
@@ -78,6 +83,15 @@ export type {
   StringLiteralUseResult,
 } from './types';
 
+// --- fixture-uses ---
+export { fixtureUses } from './queries/fixture-uses';
+export type {
+  FixtureFileType,
+  FixtureUseKind,
+  FixtureUseResult,
+  FixtureUsesArgs,
+} from './types';
+
 // --- flow-trace ---
 export { flowTrace } from './queries/flow-trace';
 export type { FlowTraceArgs, FlowTraceHopKind, FlowTraceRow } from './types';
@@ -85,3 +99,16 @@ export type { FlowTraceArgs, FlowTraceHopKind, FlowTraceRow } from './types';
 // --- type-drift-detect ---
 export { typeDriftDetect } from './queries/type-drift-detect';
 export type { TypeDriftDetectArgs, TypeDriftResult } from './types';
+
+// --- schema-coverage ---
+export {
+  schemaCoverage,
+  renderSchemaCoverageReport,
+} from './queries/schema-coverage';
+export type {
+  SchemaCoverageArgs,
+  SchemaCoverageCaveats,
+  SchemaCoverageResponse,
+  SchemaCoverageResult,
+  SchemaCoverageVerdict,
+} from './types';

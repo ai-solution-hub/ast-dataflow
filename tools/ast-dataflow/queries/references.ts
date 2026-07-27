@@ -12,6 +12,7 @@ import {
   buildErrorResponse,
   AstResolverError,
 } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -151,7 +152,6 @@ export async function references(
   const allRefs = resolved.declaration.findReferences();
 
   const rows: ReferenceResult[] = [];
-  let totalEstimated = 0;
 
   for (const refSym of allRefs) {
     for (const ref of refSym.getReferences()) {
@@ -168,9 +168,6 @@ export async function references(
         continue;
       }
 
-      totalEstimated++;
-      if (rows.length >= limit) continue;
-
       const lineCol = sf.getLineAndColumnAtPos(node.getStart());
 
       rows.push({
@@ -185,12 +182,13 @@ export async function references(
     }
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'references',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

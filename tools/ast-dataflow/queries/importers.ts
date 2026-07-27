@@ -1,5 +1,10 @@
 import { relative, resolve, isAbsolute } from 'node:path';
-import { Node, type Project, SyntaxKind } from 'ts-morph';
+import {
+  Node,
+  type ImportSpecifier,
+  type Project,
+  type SourceFile,
+} from 'ts-morph';
 import type {
   ImportersArgs,
   ImporterResult,
@@ -7,6 +12,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -67,41 +73,58 @@ function stripAliasPrefix(specifier: string, aliasPrefixes: string[]): string {
 }
 
 /**
- * Resolve a module path string to an absolute file path using the project's
- * module resolver.
+ * Resolve a module path string to an absolute file path.
  *
- * Strategy: walk every source file's import declarations. The first one whose
- * getModuleSpecifierSourceFile() returns a SourceFile, and whose specifier
- * value matches the input (or whose resolved file path ends with a normalised
- * form of the input), is our target. This way both '@/lib/ai/change-reports' and
- * '../../lib/ai/change-reports' resolve to the same SourceFile without re-implementing
- * the compiler's module resolver.
+ * Direct-path resolution runs FIRST: interpret the modulePath as a
+ * repo-relative file path (with any alias prefix stripped) and look it up in
+ * the project, appending extensions and index files the way the module
+ * resolver would. This is a handful of O(1) lookups and covers repo-relative
+ * inputs plus KH-style aliases whose mapping is the repo root (`@/*` → `./*`).
+ *
+ * Only when that misses do we fall back to walking every source file's import
+ * declarations: the first one whose getModuleSpecifierSourceFile() returns a
+ * SourceFile, and whose specifier value matches the input (or whose resolved
+ * file path ends with a normalised form of the input), is our target. This
+ * covers alias forms whose mapping differs from the stripped path (e.g. a
+ * Vite `~/*` → `./src/*`) and relative-specifier inputs, without
+ * re-implementing the compiler's module resolver — but it costs a module
+ * resolution per candidate import, so it must stay the fallback (P-19).
  *
  * The alias strip uses the tsconfig `compilerOptions.paths` to discover which
  * alias prefixes are active (e.g. `@/` for KH, `~/` for Vite projects).
  * Falls back to stripping `@/` when no paths are declared.
- *
- * If no import in the corpus resolves to the input string, we fall back to
- * treating the modulePath as a repo-relative file path and looking it up
- * directly in the project.
  */
 function resolveTargetFilePath(
   modulePath: string,
   project: Project,
   repoRoot: string,
 ): string | null {
+  const aliasPrefixes = extractAliasPrefixes(project);
+
+  // Direct path: interpret modulePath as repo-relative (alias stripped).
+  const strippedInput = stripAliasPrefix(modulePath, aliasPrefixes);
+  const absPath = isAbsolute(strippedInput)
+    ? strippedInput
+    : resolve(repoRoot, strippedInput);
+  const direct = project.getSourceFile(absPath);
+  if (direct) return direct.getFilePath();
+
+  for (const suffix of ['.ts', '.tsx', '/index.ts', '/index.tsx']) {
+    const candidate = project.getSourceFile(absPath + suffix);
+    if (candidate) return candidate.getFilePath();
+  }
+
+  // Fallback: find an import in the corpus that resolves to the input.
   // Normalise the input: strip trailing '.ts' for comparison purposes.
   const normalised = modulePath.replace(/\.ts$/, '');
-
-  const aliasPrefixes = extractAliasPrefixes(project);
   const strippedNormalised = stripAliasPrefix(normalised, aliasPrefixes);
+  const lastSegment = normalised.split('/').at(-1) ?? normalised;
 
   for (const sf of project.getSourceFiles()) {
     for (const importDecl of sf.getImportDeclarations()) {
       const specifier = importDecl.getModuleSpecifierValue();
       // Quick pre-filter: the specifier must contain the last segment of the
       // normalised module path to avoid unnecessary resolution calls.
-      const lastSegment = normalised.split('/').at(-1) ?? normalised;
       if (!specifier.includes(lastSegment)) continue;
 
       const resolved = importDecl.getModuleSpecifierSourceFile();
@@ -127,22 +150,6 @@ function resolveTargetFilePath(
     }
   }
 
-  // Fallback: interpret modulePath as repo-relative path.
-  const strippedInput = stripAliasPrefix(modulePath, aliasPrefixes);
-  const absPath = isAbsolute(strippedInput)
-    ? strippedInput
-    : resolve(repoRoot, strippedInput);
-  const direct = project.getSourceFile(absPath);
-  if (direct) return direct.getFilePath();
-
-  // Try resolution the way the module resolver would: append extensions and
-  // index files. Covers .tsx components and directory imports with zero
-  // importers in the corpus (the loop above only finds already-imported files).
-  for (const suffix of ['.ts', '.tsx', '/index.ts', '/index.tsx']) {
-    const candidate = project.getSourceFile(absPath + suffix);
-    if (candidate) return candidate.getFilePath();
-  }
-
   return null;
 }
 
@@ -152,53 +159,98 @@ function toRepoRelative(repoRoot: string, absPath: string): string {
 }
 
 /**
+ * True when the identifier occupies a position that can reference an imported
+ * binding. Filters out the identifier-shaped positions that are NAMES rather
+ * than references — `obj.foo`, `{ foo: 1 }`, `const { foo: x } = y`, member
+ * declarations, `export { x as foo }` aliases, JSX attribute names — so a
+ * property called `foo` does not mark an unused import `foo` as used.
+ */
+function isBindingUsagePosition(id: Node): boolean {
+  const parent = id.getParent();
+  if (parent === undefined) return false;
+
+  if (Node.isPropertyAccessExpression(parent)) {
+    return parent.getNameNode() !== id;
+  }
+  if (Node.isQualifiedName(parent)) {
+    return parent.getRight() !== id;
+  }
+  if (Node.isPropertyAssignment(parent) || Node.isJsxAttribute(parent)) {
+    return parent.getNameNode() !== id;
+  }
+  if (Node.isBindingElement(parent)) {
+    return parent.getPropertyNameNode() !== id;
+  }
+  if (Node.isExportSpecifier(parent)) {
+    // `export { local as alias }` — the local name references the binding.
+    return parent.getAliasNode() !== id;
+  }
+  if (
+    Node.isPropertySignature(parent) ||
+    Node.isPropertyDeclaration(parent) ||
+    Node.isMethodSignature(parent) ||
+    Node.isMethodDeclaration(parent) ||
+    Node.isGetAccessorDeclaration(parent) ||
+    Node.isSetAccessorDeclaration(parent) ||
+    Node.isEnumMember(parent)
+  ) {
+    return parent.getNameNode() !== id;
+  }
+  return true;
+}
+
+/**
+ * Collect the names of all identifiers in binding-usage positions outside
+ * import declarations — the syntactic approximation of "names referenced in
+ * the file body". JSX tag usages (`<Widget />`, `<Widget>…</Widget>`) need no
+ * special casing: a JsxSelfClosingElement/JsxOpeningElement tag name is
+ * itself an Identifier descendant, and `<Ns.Widget />` resolves through the
+ * PropertyAccessExpression rule above.
+ */
+function collectBodyUsageNames(sf: SourceFile): Set<string> {
+  const names = new Set<string>();
+  sf.forEachDescendant((node, traversal) => {
+    if (Node.isImportDeclaration(node)) {
+      traversal.skip();
+      return;
+    }
+    if (Node.isIdentifier(node) && isBindingUsagePosition(node)) {
+      names.add(node.getText());
+    }
+  });
+  return names;
+}
+
+/**
  * Determine whether any named import (or its alias) is referenced in the
  * file body beyond the import declaration itself.
  *
- * Heuristic: for each named import, check if its local binding name appears
- * in the file's text outside the import statement. We use
- * `findReferencesAsNodes()` on the import specifier's local name, then filter
- * to nodes that are NOT the import clause itself.
+ * Syntactic same-file scan: one forEachDescendant pass over the file collects
+ * the identifier names in usage positions; each named import's local binding
+ * name is then a Set lookup. Replaces a per-name language-service
+ * findReferencesAsNodes() pass that dominated query time (P-19). The scan is
+ * scope-blind — a same-named local declared in an inner scope counts as a
+ * usage — which is an acceptable over-approximation for unused detection.
  *
  * Returns true if ALL named imports are unreferenced (i.e. the whole import
  * is unused from a usage perspective).
  */
-function isImportUnused(
-  namedImports: import('ts-morph').ImportSpecifier[],
-): boolean {
+function isImportUnused(namedImports: ImportSpecifier[]): boolean {
   if (namedImports.length === 0) return false;
 
-  const sf = namedImports[0].getSourceFile();
+  const usedNames = collectBodyUsageNames(namedImports[0].getSourceFile());
 
-  for (const ni of namedImports) {
+  return namedImports.every((ni) => {
     // The local binding in the file body is the alias (if present), else the
     // original name. E.g. `import { foo as bar }` → local name is `bar`.
-    const aliasNode = ni.getAliasNode();
-    const localName = aliasNode ?? ni.getNameNode();
+    const localName = ni.getAliasNode() ?? ni.getNameNode();
 
-    // The local binding is reference-findable only when it is an Identifier;
-    // a string-literal import name with no alias has no usage binding to
+    // A string-literal import name with no alias has no usage binding to
     // search for, so treat it as having no body references.
-    if (!Node.isReferenceFindable(localName)) {
-      continue;
-    }
-    const refs = localName.findReferencesAsNodes();
+    if (!Node.isIdentifier(localName)) return true;
 
-    // Filter to refs that are:
-    //   - in the same source file (cross-file declaration sites are excluded)
-    //   - NOT inside an ImportDeclaration (i.e. not the import clause itself)
-    const bodyRefs = refs.filter(
-      (ref) =>
-        ref.getSourceFile() === sf &&
-        ref.getFirstAncestorByKind(SyntaxKind.ImportDeclaration) === undefined,
-    );
-
-    if (bodyRefs.length > 0) {
-      // At least one named import is used in the file body.
-      return false;
-    }
-  }
-  return true;
+    return !usedNames.has(localName.getText());
+  });
 }
 
 export async function importers(
@@ -228,7 +280,6 @@ export async function importers(
   );
 
   const rows: ImporterResult[] = [];
-  let totalEstimated = 0;
 
   for (const sf of project.getSourceFiles()) {
     const sfPath = sf.getFilePath();
@@ -253,8 +304,6 @@ export async function importers(
       if (!isTargetMatch) continue;
 
       matched = true;
-      totalEstimated++;
-      if (rows.length >= limit) continue;
 
       const lineCol = sf.getLineAndColumnAtPos(importDecl.getStart());
 
@@ -310,9 +359,6 @@ export async function importers(
 
       if (!isTargetMatch) continue;
 
-      totalEstimated++;
-      if (rows.length >= limit) continue;
-
       const lineCol = sf.getLineAndColumnAtPos(exportDecl.getStart());
 
       const namedExports = exportDecl.getNamedExports();
@@ -332,12 +378,13 @@ export async function importers(
     }
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'importers',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

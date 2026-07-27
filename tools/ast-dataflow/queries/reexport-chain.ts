@@ -1,3 +1,8 @@
+// EXEMPT from spatial-coverage truncation (truncate.ts / PRODUCT inv 14):
+// rows are chain hops (declaration → barrel(distance n) → importers) where a
+// spatial (file, line, column) reorder would break barrel→importer contiguity.
+// The collect-then-slice cap is kept instead. Caveat: the BFS stops enumerating
+// once `limit` rows are collected, so `totalEstimated` is a lower bound.
 import { resolve } from 'node:path';
 import { type Project, type SourceFile } from 'ts-morph';
 import type {

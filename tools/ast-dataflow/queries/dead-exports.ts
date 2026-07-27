@@ -17,6 +17,7 @@ import {
   walkBarrelChain,
   isTestFilePath,
 } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -182,7 +183,6 @@ export async function deadExports(
   }
 
   const rows: DeadExportResult[] = [];
-  let totalEstimated = 0;
 
   try {
     for (const sf of project.getSourceFiles()) {
@@ -224,21 +224,18 @@ export async function deadExports(
 
         // Only emit rows for dead exports (reachableImporters === 0).
         if (reachableImporters === 0) {
-          totalEstimated++;
-          if (rows.length < limit) {
-            rows.push({
-              file: relPath,
-              line: exportEntry.line,
-              column: exportEntry.column,
-              confidence: 'exact',
-              symbol: exportEntry.name,
-              exportKind: exportEntry.kind,
-              reachableImporters,
-              testOnlyImporters,
-              testOnly,
-              barrelChain: barrel.chain,
-            });
-          }
+          rows.push({
+            file: relPath,
+            line: exportEntry.line,
+            column: exportEntry.column,
+            confidence: 'exact',
+            symbol: exportEntry.name,
+            exportKind: exportEntry.kind,
+            reachableImporters,
+            testOnlyImporters,
+            testOnly,
+            barrelChain: barrel.chain,
+          });
         }
       }
     }
@@ -254,12 +251,13 @@ export async function deadExports(
     );
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'dead-exports',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

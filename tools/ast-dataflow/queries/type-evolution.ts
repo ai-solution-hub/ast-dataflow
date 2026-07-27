@@ -13,6 +13,7 @@ import {
   AstResolverError,
   isTestFilePath,
 } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -181,7 +182,6 @@ function findPropertySites(
   project: Project,
   typeName: string,
   propertyName: string,
-  limit: number,
 ): Array<{ node: Node; kind: 'propertyAccess' | 'destructuring' }> {
   const results: Array<{
     node: Node;
@@ -190,13 +190,10 @@ function findPropertySites(
   const checker = project.getTypeChecker();
 
   for (const sf of project.getSourceFiles()) {
-    if (results.length >= limit) break;
-
     // Scan PropertyAccessExpression nodes: obj.prop
     for (const pa of sf.getDescendantsOfKind(
       SyntaxKind.PropertyAccessExpression,
     )) {
-      if (results.length >= limit) break;
       const propName = pa.getName();
       if (propName !== propertyName) continue;
 
@@ -213,8 +210,6 @@ function findPropertySites(
     for (const obp of sf.getDescendantsOfKind(
       SyntaxKind.ObjectBindingPattern,
     )) {
-      if (results.length >= limit) break;
-
       const elements = obp.getElements();
       const matchingEl = elements.find((el) => el.getName() === propertyName);
       if (!matchingEl) continue;
@@ -341,7 +336,6 @@ export async function typeEvolution(
   }
 
   const rows: TypeEvolutionResult[] = [];
-  let totalEstimated = 0;
 
   // Phase 1: Walk all references to the type symbol.
   // These give us annotation, returnType, generic, satisfies kind references.
@@ -361,9 +355,6 @@ export async function typeEvolution(
       const kind = classifyTypeRefKind(node);
       if (kind === null) continue; // unclassifiable
 
-      totalEstimated++;
-      if (rows.length >= limit) continue;
-
       const lineCol = sf.getLineAndColumnAtPos(node.getStart());
       rows.push({
         file: relPath,
@@ -380,20 +371,12 @@ export async function typeEvolution(
   // Phase 2: Find property access and destructuring sites for the named property.
   // These are the runtime sites where obj.property or const { property } = obj
   // appears with the obj typed as our target type.
-  const propertySites = findPropertySites(
-    project,
-    args.type,
-    args.property,
-    limit,
-  );
+  const propertySites = findPropertySites(project, args.type, args.property);
 
   for (const { node, kind } of propertySites) {
     const sf = node.getSourceFile();
     const relPath = toRepoRelative(repoRoot, sf.getFilePath());
     if (excludeTests && isTestFilePath(relPath)) continue;
-
-    totalEstimated++;
-    if (rows.length >= limit) continue;
 
     const lineCol = sf.getLineAndColumnAtPos(node.getStart());
     rows.push({
@@ -407,12 +390,13 @@ export async function typeEvolution(
     });
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'type-evolution',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

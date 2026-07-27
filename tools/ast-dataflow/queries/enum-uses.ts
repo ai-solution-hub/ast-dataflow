@@ -6,6 +6,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { findEnclosing, toRepoRelative, buildErrorResponse } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -106,7 +107,6 @@ export async function enumUses(
   }
 
   const rows: EnumUseResult[] = [];
-  let totalEstimated = 0;
 
   // Process each enum declaration (handles the case of multiple same-name enums)
   for (const { sf: declarationSf, node: enumDeclNode } of enumDecls) {
@@ -119,18 +119,15 @@ export async function enumUses(
       const lineCol = declarationSf.getLineAndColumnAtPos(
         enumDeclNode.getStart(),
       );
-      totalEstimated++;
-      if (rows.length < limit) {
-        rows.push({
-          file: toRepoRelative(repoRoot, declarationSf.getFilePath()),
-          line: lineCol.line,
-          column: lineCol.column,
-          kind: 'declaration',
-          memberName: null,
-          enclosing: 'moduleTopLevel',
-          confidence: 'exact',
-        });
-      }
+      rows.push({
+        file: toRepoRelative(repoRoot, declarationSf.getFilePath()),
+        line: lineCol.line,
+        column: lineCol.column,
+        kind: 'declaration',
+        memberName: null,
+        enclosing: 'moduleTopLevel',
+        confidence: 'exact',
+      });
     }
 
     // --- Emit declaration rows for each enum member ---
@@ -143,18 +140,15 @@ export async function enumUses(
       }
 
       const lineCol = declarationSf.getLineAndColumnAtPos(member.getStart());
-      totalEstimated++;
-      if (rows.length < limit) {
-        rows.push({
-          file: toRepoRelative(repoRoot, declarationSf.getFilePath()),
-          line: lineCol.line,
-          column: lineCol.column,
-          kind: 'declaration',
-          memberName,
-          enclosing: 'moduleTopLevel',
-          confidence: 'exact',
-        });
-      }
+      rows.push({
+        file: toRepoRelative(repoRoot, declarationSf.getFilePath()),
+        line: lineCol.line,
+        column: lineCol.column,
+        kind: 'declaration',
+        memberName,
+        enclosing: 'moduleTopLevel',
+        confidence: 'exact',
+      });
     }
 
     // --- Walk all references to the enum symbol ---
@@ -211,9 +205,6 @@ export async function enumUses(
           continue;
         }
 
-        totalEstimated++;
-        if (rows.length >= limit) continue;
-
         const lineCol = sf.getLineAndColumnAtPos(node.getStart());
         rows.push({
           file: toRepoRelative(repoRoot, sf.getFilePath()),
@@ -228,12 +219,13 @@ export async function enumUses(
     }
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'enum-uses',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

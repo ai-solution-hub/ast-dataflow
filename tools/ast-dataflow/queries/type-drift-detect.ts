@@ -32,6 +32,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { toRepoRelative, isTestFilePath } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 500;
 
@@ -98,8 +99,9 @@ function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
 // Only files matching the globs are inspected for fetcher/route call sites;
 // interface declarations are always scanned regardless of scope.
 // Supported syntax: `**` (any path segments), `*` (within one segment).
+// Exported for schema-coverage, which shares the same --scope contract.
 // ---------------------------------------------------------------------------
-function buildScopeMatcher(
+export function buildScopeMatcher(
   scope: string | undefined,
 ): (rel: string) => boolean {
   if (!scope) return () => true;
@@ -573,7 +575,6 @@ export async function typeDriftDetect(
 
   // Classify each candidate
   const rows: TypeDriftResult[] = [];
-  let totalEstimated = 0;
 
   for (const candidate of candidateMap.values()) {
     // Collect all references to this interface/type
@@ -749,35 +750,38 @@ export async function typeDriftDetect(
           deduplicatedCandidateRoutes,
         );
 
-    totalEstimated++;
+    rows.push({
+      // BaseResult fields (from declaredAt position)
+      file: candidate.file,
+      line: candidate.line,
+      column: candidate.column,
+      confidence: 'exact',
 
-    if (rows.length < limit) {
-      rows.push({
-        // BaseResult fields (from declaredAt position)
+      // TypeDriftResult fields
+      interface: candidate.name,
+      declaredAt: {
         file: candidate.file,
         line: candidate.line,
         column: candidate.column,
-        confidence: 'exact',
-
-        // TypeDriftResult fields
-        interface: candidate.name,
-        declaredAt: {
-          file: candidate.file,
-          line: candidate.line,
-          column: candidate.column,
-        },
-        classification: isAllowlisted ? 'unused' : classification,
-        fetchers: fetcherUses,
-        routes: routeUses,
-        candidateRoutes: deduplicatedCandidateRoutes,
-        remediationHint,
-        ...(testOnly !== undefined ? { testOnly } : {}),
-        ...(allowlistedField !== undefined
-          ? { allowlisted: allowlistedField }
-          : {}),
-      });
-    }
+      },
+      classification: isAllowlisted ? 'unused' : classification,
+      fetchers: fetcherUses,
+      routes: routeUses,
+      candidateRoutes: deduplicatedCandidateRoutes,
+      remediationHint,
+      ...(testOnly !== undefined ? { testOnly } : {}),
+      ...(allowlistedField !== undefined
+        ? { allowlisted: allowlistedField }
+        : {}),
+    });
   }
+
+  // Spatial truncation first (PRODUCT inv 14), then the classification-major
+  // sort re-applied AFTER truncation — the stable sort preserves the
+  // (file, line, column) order within each class, keeping the Markdown
+  // report sections intact.
+  const t = truncateSpatial(rows, limit);
+  const results = t.rows;
 
   // Sort: fetcher-only first, then route-only, enforced, unused
   const ORDER: Record<TypeDriftResult['classification'], number> = {
@@ -786,7 +790,7 @@ export async function typeDriftDetect(
     enforced: 2,
     unused: 3,
   };
-  rows.sort((a, b) => ORDER[a.classification] - ORDER[b.classification]);
+  results.sort((a, b) => ORDER[a.classification] - ORDER[b.classification]);
 
   // CI mode: diff against baseline (D-19)
   let newSinceBaseline: string[] | undefined;
@@ -796,7 +800,7 @@ export async function typeDriftDetect(
       baseline.map((e) => `${e.interface}:${e.declaredAt?.file ?? ''}`),
     );
 
-    const nonAllowlistedFetcherOnly = rows.filter(
+    const nonAllowlistedFetcherOnly = results.filter(
       (r) => r.classification === 'fetcher-only' && !r.allowlisted,
     );
 
@@ -813,9 +817,9 @@ export async function typeDriftDetect(
   } = {
     query: 'type-drift-detect',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
     ...(allowlistBadJson
       ? {

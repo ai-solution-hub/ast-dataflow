@@ -245,6 +245,32 @@ describe('string-literal-uses — fixture 5: plain call-expression argument lite
 });
 
 // ---------------------------------------------------------------------------
+// Spatial-coverage truncation (PRODUCT inv 14): 'project_id' has two sites in
+// each of fixture-argument.ts and fixture-argument-second.ts (four total).
+// ---------------------------------------------------------------------------
+describe('string-literal-uses — spatial-coverage truncation with a low limit', () => {
+  it('keeps both fixture files represented and reports the exact un-truncated total', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await stringLiteralUses(
+      { value: 'project_id', limit: 2 },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error).toBeUndefined();
+    expect(response.results).toHaveLength(2);
+    // Distinct files come first — one row from each file, not two from one.
+    const files = response.results.map((r) => r.file).sort();
+    expect(files).toEqual([
+      'fixture-argument-second.ts',
+      'fixture-argument.ts',
+    ]);
+    expect(response.truncated).toBe(true);
+    expect(response.totalEstimated).toBe(4);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Error contract: missing required --value argument
 // ---------------------------------------------------------------------------
 describe('string-literal-uses — error contract: missing value argument', () => {

@@ -108,6 +108,104 @@ describe('column-reads query — untyped client', () => {
   });
 });
 
+describe('column-reads query — typed-detection guards', () => {
+  it('reports a hand-rolled structural builder as isTyped=false / indirect', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // untyped-structural-client.ts: one chain — select + eq, both at line 27.
+    // The old heuristic's branch 1-b claimed exact from the structural
+    // return-type text.
+    const hits = response.results.filter(
+      (r) => r.file === 'untyped-structural-client.ts',
+    );
+    expect(hits).toHaveLength(2);
+    expect(hits.map((r) => r.method).sort()).toEqual(['eq', 'select']);
+    for (const hit of hits) {
+      expect(hit).toMatchObject({
+        isTyped: false,
+        confidence: 'indirect',
+        table: 'bid_questions',
+        columnPath: 'project_id',
+        line: 27,
+      });
+    }
+  });
+
+  it('reports a bare SupabaseClient parameter as isTyped=false / indirect', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // untyped-param-client.ts: select at line 13, eq at line 18. The stub's
+    // builder generics still echo the table name — the old branch 1-a false
+    // positive.
+    const hits = response.results.filter(
+      (r) => r.file === 'untyped-param-client.ts',
+    );
+    expect(hits).toHaveLength(2);
+    expect(hits.map((r) => r.method).sort()).toEqual(['eq', 'select']);
+    for (const hit of hits) {
+      expect(hit).toMatchObject({
+        isTyped: false,
+        confidence: 'indirect',
+        table: 'bid_questions',
+        columnPath: 'project_id',
+      });
+    }
+  });
+
+  it('resolves a SupabaseClient<Database> parameter to isTyped=true / exact across the function boundary', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // typed-param-client.ts: strategy 2 cannot see a parameter binding —
+    // strategy 1 resolves the Relation's Row shape from the .from() return type.
+    const hits = response.results.filter(
+      (r) => r.file === 'typed-param-client.ts',
+    );
+    expect(hits).toHaveLength(2);
+    expect(hits.map((r) => r.method).sort()).toEqual(['eq', 'select']);
+    for (const hit of hits) {
+      expect(hit).toMatchObject({
+        isTyped: true,
+        confidence: 'exact',
+        table: 'bid_questions',
+        columnPath: 'project_id',
+      });
+    }
+  });
+
+  it('keeps the untyped stub client indirect despite the table-name echo in its builder generics', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // Regression guard: the stub mirrors supabase-js in echoing the table-name
+    // literal into the untyped builder's type arguments — text matching on the
+    // return type would flip these back to exact.
+    const hits = response.results.filter((r) => r.file === 'untyped-client.ts');
+    expect(hits).toHaveLength(2);
+    for (const hit of hits) {
+      expect(hit).toMatchObject({ isTyped: false, confidence: 'indirect' });
+    }
+  });
+});
+
 describe('column-reads query — match object', () => {
   it('finds .match({ project_id: value }) longhand hit with method=match', async () => {
     const { project, repoRoot } = makeProject();
@@ -174,6 +272,72 @@ describe('column-reads query — match object', () => {
   });
 });
 
+describe('column-reads query — .from(CONST) table-name resolution', () => {
+  it('resolves a literal-typed const table argument to exact rows', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // const-table-read.ts line 35: .from(BID_QUESTIONS_TABLE) chain — the
+    // const's type is the string-literal 'bid_questions'.
+    const hits = response.results.filter(
+      (r) => r.file === 'const-table-read.ts' && r.line === 35,
+    );
+    expect(hits).toHaveLength(2);
+    expect(hits.map((r) => r.method).sort()).toEqual(['eq', 'select']);
+    for (const hit of hits) {
+      expect(hit).toMatchObject({
+        isTyped: true,
+        confidence: 'exact',
+        table: 'bid_questions',
+        columnPath: 'project_id',
+      });
+    }
+  });
+
+  it('resolves an as-const map property table argument to an exact row', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // const-table-read.ts line 44: .from(TABLES.bid_questions) chain — the
+    // `as const` map property's type is the string-literal 'bid_questions'.
+    const hits = response.results.filter(
+      (r) => r.file === 'const-table-read.ts' && r.line === 44,
+    );
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      isTyped: true,
+      confidence: 'exact',
+      table: 'bid_questions',
+      columnPath: 'project_id',
+      method: 'select',
+    });
+  });
+
+  it('excludes widened-string and union-of-literals table arguments as unattributable', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnReads(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // Only the two resolvable chains produce rows — the widened-string map
+    // property, `string` parameter, and union-ternary decoys contribute none.
+    const hits = response.results.filter(
+      (r) => r.file === 'const-table-read.ts',
+    );
+    expect(hits).toHaveLength(3);
+  });
+});
+
 describe('column-reads query — false-positive guard', () => {
   it('suppresses hits from noise.ts (wrong table, wrong column, bare string)', async () => {
     const { project, repoRoot } = makeProject();
@@ -196,13 +360,20 @@ describe('column-reads query — excludeTests filter', () => {
       project,
       repoRoot,
     );
-    // Fixture has 9 rows: typed-client.ts (2), untyped-client.ts (2), match-object.ts (4), wildcard-select.ts (1)
-    expect(response.results).toHaveLength(9);
+    // Fixture has 18 rows: typed-client.ts (2), untyped-client.ts (2),
+    // match-object.ts (4), wildcard-select.ts (1),
+    // untyped-structural-client.ts (2), untyped-param-client.ts (2),
+    // typed-param-client.ts (2), const-table-read.ts (3)
+    expect(response.results).toHaveLength(18);
     const files = response.results.map((r) => r.file);
     expect(files).toContain('typed-client.ts');
+    expect(files).toContain('const-table-read.ts');
     expect(files).toContain('untyped-client.ts');
     expect(files).toContain('match-object.ts');
     expect(files).toContain('wildcard-select.ts');
+    expect(files).toContain('untyped-structural-client.ts');
+    expect(files).toContain('untyped-param-client.ts');
+    expect(files).toContain('typed-param-client.ts');
   });
 
   it('suppresses __tests__/** hits when excludeTests is true', async () => {

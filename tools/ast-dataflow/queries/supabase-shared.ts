@@ -13,61 +13,80 @@ import {
  */
 
 /**
+ * Return true when the client binding behind `clientExpr` was declared with
+ * an explicit type argument, e.g. `const sb = createClient<Database>(...)`.
+ *
+ * Resolution MUST go through the identifier's own symbol
+ * (`clientExpr.getSymbol()`) — the type's symbol
+ * (`clientExpr.getType().getSymbol()`) resolves to the SupabaseClient
+ * interface declaration, never a VariableDeclaration, so the type-args check
+ * would never run.
+ */
+export function clientBindingHasExplicitTypeArgs(clientExpr: Node): boolean {
+  try {
+    for (const decl of clientExpr.getSymbol()?.getDeclarations() ?? []) {
+      if (decl.getKind() !== SyntaxKind.VariableDeclaration) continue;
+      const initialiser = (
+        decl as import('ts-morph').VariableDeclaration
+      ).getInitializer();
+      if (
+        initialiser?.getKind() === SyntaxKind.CallExpression &&
+        (initialiser as CallExpression).getTypeArguments().length > 0
+      ) {
+        return true;
+      }
+    }
+  } catch {
+    // Symbol resolution may fail; treat as untyped.
+  }
+  return false;
+}
+
+/**
  * Determine whether the Supabase client used in a `.from('table')` call chain
  * is type-instantiated (carries a `Database` generic parameter).
  *
- * Strategy 1: check the return type of `.from('table')` — typed clients embed
- * the table name in the generic parameter. Strategy 2: inspect the variable
- * declaration of the client binding for a type argument on
- * `createClient<...>(...)`.
+ * Strategy 1: inspect the `.from()` return type's type arguments for a
+ * non-any Relation carrying a concrete `Row` shape. Typed clients instantiate
+ * `PostgrestQueryBuilder<ClientOptions, Schema, Relation, TableName, ...>`
+ * with `Relation = { Row; Insert; Update; Relationships }`. Strategy 1 works
+ * across function boundaries (`function f(client: SupabaseClient<Database>)`).
  *
- * The heuristic may produce false-negatives when the client is passed through
- * several function boundaries (type erasure at callsite). In that case
+ * Strategy 2: the client binding's declaration carries an explicit type
+ * argument (`const sb = createClient<Database>(...)`).
+ *
+ * The heuristic may produce false-negatives when the client's type is erased
+ * across a boundary (e.g. a bare `SupabaseClient` parameter). In that case
  * `isTyped: false` with `confidence: 'indirect'` is the safe default.
  */
-export function detectIsTyped(
-  fromCallExpr: CallExpression,
-  table: string,
-): boolean {
+export function detectIsTyped(fromCallExpr: CallExpression): boolean {
+  // Strategy 1: the .from() return type's type arguments must include a
+  // non-any Relation carrying a concrete `Row` shape. Untyped clients
+  // (Database = any) instantiate these arguments as `any` even though the
+  // table-name literal is still echoed into the generic — so never match on
+  // return-type text.
   try {
-    const returnTypeText = fromCallExpr.getReturnType().getText();
-    if (returnTypeText.includes(table)) {
-      return true;
-    }
-    if (
-      !returnTypeText.includes('Record<string, unknown>') &&
-      !returnTypeText.includes('unknown') &&
-      returnTypeText.includes('{')
-    ) {
-      return true;
+    const returnType = fromCallExpr.getReturnType();
+    for (const typeArg of returnType.getTypeArguments()) {
+      if (typeArg.isAny() || typeArg.isUnknown()) continue;
+      const rowProp = typeArg.getProperty('Row');
+      if (!rowProp) continue;
+      const rowType = rowProp.getTypeAtLocation(fromCallExpr);
+      if (rowType.isAny() || rowType.isUnknown()) continue;
+      if (rowType.getProperties().length > 0) return true;
     }
   } catch {
     // Type resolution may fail on fixture projects with stub types; fall through.
   }
 
+  // Strategy 2: explicit type argument at the client binding.
   try {
     const propAccess = fromCallExpr.getExpression();
     if (propAccess.getKind() === SyntaxKind.PropertyAccessExpression) {
       const clientExpr = (
         propAccess as import('ts-morph').PropertyAccessExpression
       ).getExpression();
-      const symbol = clientExpr.getType().getSymbol();
-      if (!symbol) return false;
-      const decls = symbol.getDeclarations();
-      for (const decl of decls) {
-        if (decl.getKind() === SyntaxKind.VariableDeclaration) {
-          const initialiser = (
-            decl as import('ts-morph').VariableDeclaration
-          ).getInitializer();
-          if (initialiser?.getKind() === SyntaxKind.CallExpression) {
-            const initCall = initialiser as CallExpression;
-            const typeArgs = initCall.getTypeArguments();
-            if (typeArgs.length > 0) {
-              return true;
-            }
-          }
-        }
-      }
+      if (clientBindingHasExplicitTypeArgs(clientExpr)) return true;
     }
   } catch {
     // Symbol resolution may fail; fall through.
@@ -133,12 +152,57 @@ export function objectLiteralHasSpread(
 }
 
 /**
- * Walk a source file and collect all `.from('<table>')` call expressions that
- * match the target table name. Accepts plain string literals and
- * no-substitution template literals as the table argument.
+ * Resolve a non-literal `.from()` table argument — an Identifier
+ * (`SIGNUP_POLICY_TABLE`) or a PropertyAccessExpression
+ * (`TABLES.signup_policy`) — one hop through the type checker: the argument's
+ * type must be a single string-literal type (a literal-typed `const`, or a
+ * property of an `as const` map). Widened `string` types are unattributable
+ * and union-of-literals types ambiguous — both return null so the call stays
+ * excluded (the schema-coverage stage surfaces unattributable counts).
  */
-export function findFromCalls(sf: SourceFile, table: string): CallExpression[] {
-  const results: CallExpression[] = [];
+function resolveConstTableArg(argNode: Node): string | null {
+  const kind = argNode.getKind();
+  if (
+    kind !== SyntaxKind.Identifier &&
+    kind !== SyntaxKind.PropertyAccessExpression
+  ) {
+    return null;
+  }
+
+  try {
+    const argType = argNode.getType();
+    if (!argType.isStringLiteral()) return null;
+    const literal = argType.getLiteralValue();
+    if (typeof literal === 'string') return literal;
+  } catch {
+    // Type resolution may fail; treat as unattributable.
+  }
+  return null;
+}
+
+/**
+ * One `.from(<arg>)` call site. `table` is the resolved table name, or null
+ * when the argument is dynamic and does not resolve to a single
+ * string-literal type (schema-coverage classifies those as unattributable
+ * smoke via the argument's type).
+ */
+export interface FromCallSite {
+  callExpr: CallExpression;
+  table: string | null;
+  /** The table argument node — always present (zero-arg calls are skipped). */
+  arg: Node;
+}
+
+/**
+ * Walk a source file and collect EVERY `.from(<arg>)` call expression with its
+ * resolved table name. Accepts plain string literals and no-substitution
+ * template literals as the table argument, plus identifier / property-access
+ * arguments whose type resolves to a single string-literal type (see
+ * resolveConstTableArg). Unresolvable dynamic arguments are returned with
+ * `table: null` so schema-coverage can count them rather than drop them.
+ */
+export function findAllFromCalls(sf: SourceFile): FromCallSite[] {
+  const results: FromCallSite[] = [];
 
   const callExprs = sf.getDescendantsOfKind(SyntaxKind.CallExpression);
   for (const callExpr of callExprs) {
@@ -162,13 +226,25 @@ export function findFromCalls(sf: SourceFile, table: string): CallExpression[] {
       tableValue = (
         firstArg as import('ts-morph').NoSubstitutionTemplateLiteral
       ).getLiteralValue();
+    } else {
+      tableValue = resolveConstTableArg(firstArg);
     }
-    if (tableValue !== table) continue;
 
-    results.push(callExpr);
+    results.push({ callExpr, table: tableValue, arg: firstArg });
   }
 
   return results;
+}
+
+/**
+ * Walk a source file and collect all `.from('<table>')` call expressions that
+ * match the target table name (thin filter over findAllFromCalls — single
+ * source of truth for the table-argument resolution rules).
+ */
+export function findFromCalls(sf: SourceFile, table: string): CallExpression[] {
+  return findAllFromCalls(sf)
+    .filter((site) => site.table === table)
+    .map((site) => site.callExpr);
 }
 
 /**

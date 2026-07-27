@@ -39,12 +39,23 @@ export interface CallSiteResult extends BaseResult {
  *                     BindingElement.
  * - ORIGIN_NOT_VALUE_PRODUCING — flow-trace: the resolved node is a valid
  *                     declaration kind but has no value (e.g. a type-only alias).
+ * - not_callable    — callees: the resolved symbol has no callable body
+ *                     (interface, plain const, type alias, or a bodyless
+ *                     overload/ambient signature).
+ * - unknown_table   — schema-coverage: args.table is not a table in
+ *                     Database['public']['Tables'] (kills the silent-0/0
+ *                     dropped-table failure mode).
+ * - unknown_column  — schema-coverage: args.column is not a Row column of the
+ *                     given table.
  */
 export type ErrorKind =
   | 'unknown_file'
   | 'parse_error'
   | 'ambiguous_symbol'
   | 'out_of_corpus'
+  | 'not_callable'
+  | 'unknown_table'
+  | 'unknown_column'
   | 'ORIGIN_NOT_RESOLVABLE'
   | 'ORIGIN_NOT_VALUE_PRODUCING'
   | 'no-fetchers-found';
@@ -68,6 +79,61 @@ export interface CallersArgs {
   symbol: string;
   limit?: number;
   scope?: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// callees query (PRODUCT.md invariant 2)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/** How the call is spelled at the call site. */
+export type CalleeCallKind = 'call' | 'new' | 'super' | 'thisMethod';
+
+export interface CalleesArgs {
+  /** '<file>:<name>' — same shape as callers. */
+  symbol: string;
+  /** Max result rows; default 200. */
+  limit?: number;
+  /**
+   * When true, callees whose declaration resolves outside the tsconfig corpus
+   * (node_modules / lib.d.ts) are emitted as rows with `external: true` and
+   * null callee positions. Default false: external callees are excluded from
+   * rows and only counted in the response-level `externalCount`.
+   */
+  includeExternal?: boolean;
+}
+
+/** BaseResult position = the CALL SITE (inside the subject's body). */
+export interface CalleeResult extends BaseResult {
+  /** findEnclosing(callExpr) — names the nested closure host. */
+  enclosing: string;
+  /**
+   * Rightmost identifier ('c' for a.b.c()), '<computed>' for obj[k](),
+   * '<anonymous>' for IIFEs.
+   */
+  calleeName: string;
+  callKind: CalleeCallKind;
+  /**
+   * The call mechanism (reexport unused here). `confidence` is 'exact'
+   * whenever the checker resolved a declaration — even for 'indirect'
+   * resolution, where the variable/parameter declaration is exactly
+   * resolved — and 'indirect' only when no symbol resolves at all.
+   */
+  resolution: CallResolution;
+  /** Present when resolution === 'aliased'. */
+  importAlias?: string;
+  /** Declared-side context. Null file/line when unresolved or external. */
+  callee: { file: string | null; line: number | null };
+  /** Declaration resolves outside the tsconfig corpus (node_modules / lib.d.ts). */
+  external?: true;
+}
+
+/**
+ * Response envelope for callees. `externalCount` reports call sites whose
+ * callee declaration resolves outside the corpus, so nothing is silently
+ * invisible when external rows are excluded (the default).
+ */
+export interface CalleesResponse extends QueryResponse<CalleeResult> {
+  externalCount: number;
 }
 
 export interface ImportersArgs {
@@ -453,6 +519,52 @@ export interface StringLiteralUseResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
+// fixture-uses query (PRODUCT.md invariant 11)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * The two kinds of fixture occurrence (PRODUCT.md inv. 11's key/value split):
+ *
+ * - key   — the needle names a field: a JSON object key, a YAML mapping key,
+ *           a TS object-literal / type-literal property name (including the
+ *           `database.types.ts` PropertySignature case), or a quoted
+ *           property/enum-member name.
+ * - value — the needle is data: a JSON/YAML string value or a TS string /
+ *           template literal, including string-literal union members in
+ *           `database.types.ts` (enum-ish values).
+ */
+export type FixtureUseKind = 'key' | 'value';
+
+export type FixtureFileType = 'json' | 'ts' | 'md-frontmatter';
+
+/**
+ * Arguments for the fixture-uses query (PRODUCT.md inv. 11).
+ *
+ * - needle — exact string to find (column/table/magic literal).
+ * - kinds  — filter; default both.
+ * - scope  — optional comma-separated glob override of the default target set
+ *            (same extension routing applies; non-json/ts/md files are skipped).
+ * - limit  — max result rows; default 200.
+ */
+export interface FixtureUsesArgs {
+  needle: string;
+  kinds?: FixtureUseKind[];
+  scope?: string;
+  limit?: number;
+}
+
+export interface FixtureUseResult extends BaseResult {
+  /** Inv 15: fixture grep is heuristic — always indirect. */
+  confidence: 'indirect';
+  /** JSON/YAML/TS object-or-type KEY vs string VALUE (inv 11's split). */
+  kind: FixtureUseKind;
+  fileType: FixtureFileType;
+  /** Where in the structure: JSON path ('rows[2].project_id'), YAML path
+   *  ('baseline_values[0].key'), or TS enclosing via findEnclosing. */
+  context: string;
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
 // flow-trace query (ROADMAP R-WP6; see TECH.md §Query implementations → flow-trace)
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -615,4 +727,123 @@ export interface TypeDriftResult extends BaseResult {
   allowlisted?: { reason: string };
   /** Informational error attached to sentinel rows (e.g. no-fetchers-found). */
   error?: { kind: ErrorKind; confidence: Confidence };
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// schema-coverage query (id-375 {375.8} — the "built-not-wired" audit)
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Per-column wiring verdict. Indirect/wildcard evidence NEVER counts as
+ * wiring evidence (a nonexistent column collects both — baseline audit §2).
+ *
+ * - wired       — ≥1 exact read AND ≥1 exact write.
+ * - read-only   — exact evidence on the read side only.
+ * - write-only  — exact evidence on the write side only.
+ * - undecidable — only wildcard/indirect evidence on the column, OR zero
+ *                 evidence but the table has smoke (wildcard/indirect rows or
+ *                 table-bounded dynamic `.from()` sites) — cannot rule wiring
+ *                 in or out statically.
+ * - unwired     — zero rows AND zero wildcard/indirect on the column AND zero
+ *                 unattributable sites bounded to the table.
+ */
+export type SchemaCoverageVerdict =
+  | 'unwired'
+  | 'undecidable'
+  | 'write-only'
+  | 'read-only'
+  | 'wired';
+
+/**
+ * Arguments for the schema-coverage query.
+ *
+ * - table  — scope the report to one table (must exist in the schema, else
+ *            error kind 'unknown_table'). Default: the whole schema.
+ * - column — scope to one column of `table` (requires `table`; must exist in
+ *            the table's Row, else 'unknown_column').
+ * - scope  — comma-separated glob patterns restricting which corpus files are
+ *            scanned for `.from()` chains (same contract as type-drift-detect
+ *            --scope). The schema enumeration is never scoped.
+ * - limit  — max result rows; default 2000 (the whole schema fits — rows are
+ *            per-column verdicts, so a plain cap applies, not truncateSpatial).
+ */
+export interface SchemaCoverageArgs {
+  table?: string;
+  column?: string;
+  scope?: string;
+  limit?: number;
+}
+
+/**
+ * One per-column verdict row. Not a BaseResult — rows are verdicts about
+ * schema columns, not source positions, so the envelope uses a plain cap
+ * (sorted worst-first) instead of spatial truncation.
+ *
+ * - exactReads/exactWrites       — wiring evidence (typed client + literal
+ *                                  column confirmation).
+ * - wildcardReads                — `.select('*')` sites on the table (poison
+ *                                  every column; never wiring evidence).
+ * - indirectReads/indirectWrites — untyped-client or untraceable-payload
+ *                                  rows; never wiring evidence.
+ * - unattributableTableSites     — dynamic `.from()` sites whose argument
+ *                                  TYPE bounds them to this table (e.g.
+ *                                  `.from(fn())` where fn returns a literal
+ *                                  or union type). Same value for every
+ *                                  column of the table; >0 downgrades
+ *                                  zero-evidence columns to 'undecidable'.
+ * - evidence                     — top 3 deduped `file:line` refs per
+ *                                  direction, exact-confidence refs first.
+ */
+export interface SchemaCoverageResult {
+  table: string;
+  column: string;
+  verdict: SchemaCoverageVerdict;
+  exactReads: number;
+  exactWrites: number;
+  wildcardReads: number;
+  indirectReads: number;
+  indirectWrites: number;
+  unattributableTableSites: number;
+  evidence: {
+    reads: string[];
+    writes: string[];
+  };
+}
+
+/**
+ * Top-level scan caveats (PRODUCT SQL-opaque disclosure): the verdicts are
+ * TS-query-chain evidence only. Static fields — no SQL parsing.
+ *
+ * `unattributableSites` counts dynamic `.from(<arg>)` sites whose table could
+ * not be bounded even by the argument's type (plain-`string`-typed
+ * identifiers etc.), keyed by repo-relative file. These are per-file counts,
+ * not per-column rows — access through them is invisible to every verdict,
+ * so they are reported loudly here instead of silently dropped.
+ */
+export interface SchemaCoverageCaveats {
+  scan: string;
+  invisibleSurfaces: string[];
+  unattributableSites: Record<string, number>;
+}
+
+/**
+ * Response envelope for schema-coverage. Mirrors QueryResponse but rows are
+ * per-column verdicts (no BaseResult positions). `summary` is the verdict
+ * histogram over ALL rows (computed before the limit cap, so truncation
+ * never skews it).
+ */
+export interface SchemaCoverageResponse {
+  query: string;
+  args: Record<string, unknown>;
+  results: SchemaCoverageResult[];
+  truncated: boolean;
+  totalEstimated?: number;
+  durationMs: number;
+  caveats?: SchemaCoverageCaveats;
+  summary?: Record<SchemaCoverageVerdict, number>;
+  error?: {
+    kind: ErrorKind;
+    message: string;
+    hint?: string;
+  };
 }

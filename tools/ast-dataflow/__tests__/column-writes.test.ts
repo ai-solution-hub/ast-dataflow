@@ -229,6 +229,104 @@ describe('column-writes query — spread one-hop chase', () => {
 });
 
 // ---------------------------------------------------------------------------
+// .from(CONST) table-name resolution
+// ---------------------------------------------------------------------------
+describe('column-writes query — .from(CONST) table-name resolution', () => {
+  it('resolves a literal-typed const table argument on .update() to exact', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnWrites(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // const-table-write.ts line 29: .from(BID_QUESTIONS_TABLE).update() — the
+    // const's type is the string-literal 'bid_questions'.
+    const hits = response.results.filter(
+      (r) => r.file === 'const-table-write.ts' && r.method === 'update',
+    );
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      method: 'update',
+      columnPath: 'project_id',
+      table: 'bid_questions',
+      isTyped: true,
+      confidence: 'exact',
+      line: 29,
+    });
+  });
+
+  it('resolves an as-const map property table argument on .upsert() to exact', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnWrites(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // const-table-write.ts line 37: .from(TABLES.bid_questions).upsert() — the
+    // `as const` map property's type is the string-literal 'bid_questions'.
+    const hits = response.results.filter(
+      (r) => r.file === 'const-table-write.ts' && r.method === 'upsert',
+    );
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      method: 'upsert',
+      columnPath: 'project_id',
+      table: 'bid_questions',
+      isTyped: true,
+      confidence: 'exact',
+      line: 37,
+    });
+  });
+
+  it('excludes a widened-string table argument as unattributable', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnWrites(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // Only the update + upsert chains produce rows — the `string`-parameter
+    // insert decoy contributes none.
+    const hits = response.results.filter(
+      (r) => r.file === 'const-table-write.ts',
+    );
+    expect(hits).toHaveLength(2);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Typed-detection guard
+// ---------------------------------------------------------------------------
+describe('column-writes query — typed-detection guard', () => {
+  it('reports a hand-rolled structural builder .insert() as isTyped=false / indirect', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await columnWrites(
+      { table: 'bid_questions', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    // untyped-structural-insert.ts line 21: the old heuristic's branch 1-b
+    // claimed exact from the structural return-type text.
+    const hits = response.results.filter(
+      (r) => r.file === 'untyped-structural-insert.ts',
+    );
+    expect(hits).toHaveLength(1);
+    expect(hits[0]).toMatchObject({
+      method: 'insert',
+      columnPath: 'project_id',
+      table: 'bid_questions',
+      isTyped: false,
+      confidence: 'indirect',
+      line: 21,
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // False-positive guard
 // ---------------------------------------------------------------------------
 describe('column-writes query — false-positive guard', () => {

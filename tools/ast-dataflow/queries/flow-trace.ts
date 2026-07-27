@@ -1,3 +1,7 @@
+// EXEMPT from spatial-coverage truncation (truncate.ts / PRODUCT inv 14):
+// rows are ordered hops of a trace path, so truncation must stay
+// traversal-ordered — a spatial (file, line, column) reorder would break the
+// hop sequence that consumers (and the perf tests) rely on.
 import { resolve } from 'node:path';
 import { Node, Project, SyntaxKind, type SourceFile } from 'ts-morph';
 import type {

@@ -6,6 +6,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { findEnclosing, toRepoRelative, buildErrorResponse } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -139,7 +140,6 @@ export async function stringLiteralUses(
   }
 
   const rows: StringLiteralUseResult[] = [];
-  let totalEstimated = 0;
 
   for (const sf of project.getSourceFiles()) {
     const relPath = toRepoRelative(repoRoot, sf.getFilePath());
@@ -153,9 +153,6 @@ export async function stringLiteralUses(
 
       const kind = classifyLiteralKind(literal);
       if (kind === null) continue; // Not a recognised call-site context.
-
-      totalEstimated++;
-      if (rows.length >= limit) continue;
 
       const lineCol = sf.getLineAndColumnAtPos(literal.getStart());
 
@@ -187,9 +184,6 @@ export async function stringLiteralUses(
       const tag = (parent as { getTag?: () => Node }).getTag?.();
       if (!tag || tag.getText() !== 'sql') continue;
 
-      totalEstimated++;
-      if (rows.length >= limit) continue;
-
       const lineCol = sf.getLineAndColumnAtPos(tmpl.getStart());
 
       rows.push({
@@ -203,12 +197,13 @@ export async function stringLiteralUses(
     }
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'string-literal-uses',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

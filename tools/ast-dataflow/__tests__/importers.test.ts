@@ -173,6 +173,80 @@ describe('importers query — fixture', () => {
   });
 });
 
+describe('importers query — syntactic unused detection (target2)', () => {
+  it('finds exactly the three target2 callers', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'target2.ts' },
+      project,
+      repoRoot,
+    );
+
+    const files = response.results.map((r) => r.file).sort();
+    expect(files).toEqual([
+      'caller-jsx.tsx',
+      'caller-property-name.ts',
+      'caller-shorthand.ts',
+    ]);
+  });
+
+  it('counts a shorthand property usage as a real use of the import', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'target2.ts' },
+      project,
+      repoRoot,
+    );
+
+    const row = response.results.find((r) => r.file === 'caller-shorthand.ts');
+    expect(row).toMatchObject({ importStyle: 'named', unused: false });
+  });
+
+  it('does not let property keys or member accesses named like the import mask an unused import', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'target2.ts' },
+      project,
+      repoRoot,
+    );
+
+    // caller-property-name.ts contains `{ helper: ... }` and `settings.helper`
+    // but never references the imported `helper` binding itself.
+    const row = response.results.find(
+      (r) => r.file === 'caller-property-name.ts',
+    );
+    expect(row).toMatchObject({ importStyle: 'named', unused: true });
+  });
+
+  it('counts a JSX component tag as a real use of the import', async () => {
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: resolve(FIXTURE_DIR, 'tsconfig.json'),
+      repoRoot: FIXTURE_DIR,
+    });
+
+    const response = await importers(
+      { modulePath: 'target2.ts' },
+      project,
+      repoRoot,
+    );
+
+    const row = response.results.find((r) => r.file === 'caller-jsx.tsx');
+    expect(row).toMatchObject({ importStyle: 'named', unused: false });
+  });
+});
+
 describe('importers query — Vite fixture (non-@/ path alias)', () => {
   /**
    * Fixture 15-vite uses "~/*" → "./src/*" as its tsconfig path alias.

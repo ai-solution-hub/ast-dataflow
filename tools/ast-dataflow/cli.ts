@@ -1,22 +1,10 @@
 #!/usr/bin/env bun
-import { resolve } from 'node:path';
-import {
-  callers,
-  columnReads,
-  columnWrites,
-  deadExports,
-  enumUses,
-  flowTrace,
-  importers,
-  reexportChain,
-  references,
-  stringLiteralUses,
-  typeEvolution,
-  typeDriftDetect,
-  createProject,
-} from './index';
+import { isAbsolute, resolve } from 'node:path';
+import { createProject, renderSchemaCoverageReport } from './index';
+import { dispatch } from './dispatch';
 import type {
   BaseResult,
+  FixtureUseKind,
   QueryResponse,
   ReferenceKind,
   TypeDriftResult,
@@ -54,6 +42,8 @@ const REFERENCE_KINDS: ReferenceKind[] = [
   'reexport',
   'typeOnly',
 ];
+
+const FIXTURE_USE_KINDS: FixtureUseKind[] = ['key', 'value'];
 
 /**
  * Parse `--limit` into a positive integer, or exit 2 on a malformed value
@@ -116,6 +106,17 @@ function printCatalogue(): void {
               'bun run ast-dataflow callers --symbol lib/supabase/safe.ts:sb',
           },
           {
+            name: 'callees',
+            args: [
+              '--symbol <file:name>',
+              '--include-external',
+              '--limit N',
+              '--pretty',
+            ],
+            example:
+              'bun run ast-dataflow callees --symbol lib/procurement/procurement-queries.ts:getQuestions',
+          },
+          {
             name: 'importers',
             args: ['--module <module-path>', '--limit N', '--json', '--pretty'],
             example:
@@ -143,7 +144,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow column-reads --table bid_questions --column project_id',
+              'bun run ast-dataflow column-reads --table form_questions --column question_text',
           },
           {
             name: 'column-writes',
@@ -155,7 +156,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow column-writes --table bid_questions --column project_id',
+              'bun run ast-dataflow column-writes --table form_questions --column question_text',
           },
           {
             name: 'type-evolution',
@@ -213,6 +214,18 @@ function printCatalogue(): void {
             example:
               "bun run ast-dataflow string-literal-uses --value '@/lib/supabase/safe'",
           },
+          // --- fixture-uses ---
+          {
+            name: 'fixture-uses',
+            args: [
+              '--needle <string>',
+              '[--kinds key,value]',
+              '[--scope GLOB[,GLOB...]]',
+              '[--limit N]',
+              '[--pretty]',
+            ],
+            example: 'bun run ast-dataflow fixture-uses --needle project_id',
+          },
           // --- type-drift-detect ---
           {
             name: 'type-drift-detect',
@@ -225,6 +238,20 @@ function printCatalogue(): void {
               '[--json | --pretty]',
             ],
             example: 'bun run ast-dataflow type-drift-detect --pretty',
+          },
+          // --- schema-coverage ---
+          {
+            name: 'schema-coverage',
+            args: [
+              '[--table <table-name>]',
+              '[--column <column-name>]',
+              '[--scope GLOB[,GLOB...]]',
+              '[--limit N]',
+              '[--report <path>]',
+              '[--json | --pretty]',
+            ],
+            example:
+              'bun run ast-dataflow schema-coverage --report .schema-coverage-report.md',
           },
           // --- flow-trace ---
           {
@@ -244,7 +271,7 @@ function printCatalogue(): void {
           },
         ],
         notes:
-          'callers + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + flow-trace + type-drift-detect queries are wired. Full surface spec: docs-site specs/id-50-ast-dataflow-tool/PRODUCT.md; agent guidance: .claude/skills/ast-dataflow/SKILL.md.',
+          'callers + callees + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + fixture-uses + flow-trace + type-drift-detect + schema-coverage queries are wired. Full surface spec: docs-site specs/id-50-ast-dataflow-tool/PRODUCT.md; agent guidance: .claude/skills/ast-dataflow/SKILL.md.',
       },
       null,
       2,
@@ -380,8 +407,34 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       const limit = parseLimit(parsed.flags.limit);
-      const response = await callers(
+      const response = await dispatch(
+        'callers',
         { symbol, ...(limit ? { limit } : {}) },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
+    case 'callees': {
+      const symbol = parsed.flags.symbol;
+      if (typeof symbol !== 'string') {
+        console.error('callees requires --symbol <file:name>');
+        console.error(
+          'Example: bun run ast-dataflow callees --symbol lib/procurement/procurement-queries.ts:getQuestions',
+        );
+        process.exit(2);
+      }
+      const limit = parseLimit(parsed.flags.limit);
+      const includeExternal = parsed.flags['include-external'] === true;
+      const response = await dispatch(
+        'callees',
+        {
+          symbol,
+          ...(limit ? { limit } : {}),
+          ...(includeExternal ? { includeExternal } : {}),
+        },
         project,
         repoRoot,
       );
@@ -399,7 +452,8 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       const limit = parseLimit(parsed.flags.limit);
-      const response = await importers(
+      const response = await dispatch(
+        'importers',
         { modulePath, ...(limit ? { limit } : {}) },
         project,
         repoRoot,
@@ -430,7 +484,8 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
-      const response = await references(
+      const response = await dispatch(
+        'references',
         { symbol, ...(limit ? { limit } : {}), ...(kind ? { kind } : {}) },
         project,
         repoRoot,
@@ -445,20 +500,21 @@ async function main(): Promise<void> {
       if (typeof table !== 'string' || !table) {
         console.error('column-reads requires --table <table-name>');
         console.error(
-          'Example: bun run ast-dataflow column-reads --table bid_questions --column project_id',
+          'Example: bun run ast-dataflow column-reads --table form_questions --column question_text',
         );
         process.exit(2);
       }
       if (typeof column !== 'string' || !column) {
         console.error('column-reads requires --column <column-name>');
         console.error(
-          'Example: bun run ast-dataflow column-reads --table bid_questions --column project_id',
+          'Example: bun run ast-dataflow column-reads --table form_questions --column question_text',
         );
         process.exit(2);
       }
       const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
-      const response = await columnReads(
+      const response = await dispatch(
+        'column-reads',
         {
           table,
           column,
@@ -478,20 +534,21 @@ async function main(): Promise<void> {
       if (typeof table !== 'string' || !table) {
         console.error('column-writes requires --table <table-name>');
         console.error(
-          'Example: bun run ast-dataflow column-writes --table bid_questions --column project_id',
+          'Example: bun run ast-dataflow column-writes --table form_questions --column question_text',
         );
         process.exit(2);
       }
       if (typeof column !== 'string' || !column) {
         console.error('column-writes requires --column <column-name>');
         console.error(
-          'Example: bun run ast-dataflow column-writes --table bid_questions --column project_id',
+          'Example: bun run ast-dataflow column-writes --table form_questions --column question_text',
         );
         process.exit(2);
       }
       const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
-      const response = await columnWrites(
+      const response = await dispatch(
+        'column-writes',
         {
           table,
           column,
@@ -526,7 +583,8 @@ async function main(): Promise<void> {
       const fileArg = parsed.flags.file;
       const file = typeof fileArg === 'string' ? fileArg : undefined;
       const excludeTests = parsed.flags['exclude-tests'] === true;
-      const response = await typeEvolution(
+      const response = await dispatch(
+        'type-evolution',
         {
           type: typeName,
           property,
@@ -546,7 +604,8 @@ async function main(): Promise<void> {
       const symbolsFileArg = parsed.flags.symbols;
       const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
-      const response = await deadExports(
+      const response = await dispatch(
+        'dead-exports',
         {
           ...(typeof symbolArg === 'string' ? { symbol: symbolArg } : {}),
           ...(typeof symbolsFileArg === 'string'
@@ -575,7 +634,8 @@ async function main(): Promise<void> {
       const from = typeof fromArg === 'string' ? fromArg : undefined;
       const limit = parseLimit(parsed.flags.limit);
       const excludeTests = parsed.flags['exclude-tests'] === true;
-      const response = await reexportChain(
+      const response = await dispatch(
+        'reexport-chain',
         {
           symbol: symbolArg,
           ...(from ? { from } : {}),
@@ -602,7 +662,8 @@ async function main(): Promise<void> {
       const memberArg = parsed.flags.member;
       const member = typeof memberArg === 'string' ? memberArg : undefined;
       const limit = parseLimit(parsed.flags.limit);
-      const response = await enumUses(
+      const response = await dispatch(
+        'enum-uses',
         {
           enum: enumName,
           ...(member ? { member } : {}),
@@ -626,9 +687,56 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       const limit = parseLimit(parsed.flags.limit);
-      const response = await stringLiteralUses(
+      const response = await dispatch(
+        'string-literal-uses',
         {
           value: valueArg,
+          ...(limit ? { limit } : {}),
+        },
+        project,
+        repoRoot,
+      );
+      const pretty = parsed.flags.pretty === true;
+      emitResponse(response, pretty);
+      return;
+    }
+    // --- fixture-uses ---
+    case 'fixture-uses': {
+      const needleArg = parsed.flags.needle;
+      if (typeof needleArg !== 'string' || !needleArg) {
+        console.error('fixture-uses requires --needle <string>');
+        console.error(
+          'Example: bun run ast-dataflow fixture-uses --needle project_id',
+        );
+        process.exit(2);
+      }
+      const kindsArg = parsed.flags.kinds;
+      let kinds: FixtureUseKind[] | undefined;
+      if (typeof kindsArg === 'string') {
+        const parts = kindsArg
+          .split(',')
+          .map((k) => k.trim())
+          .filter(Boolean);
+        const invalid = parts.filter(
+          (k) => !FIXTURE_USE_KINDS.includes(k as FixtureUseKind),
+        );
+        if (invalid.length > 0) {
+          console.error(
+            `Invalid --kinds value: "${invalid.join(', ')}". Valid kinds: ${FIXTURE_USE_KINDS.join(', ')}`,
+          );
+          process.exit(2);
+        }
+        kinds = parts as FixtureUseKind[];
+      }
+      const scopeArg = parsed.flags.scope;
+      const scope = typeof scopeArg === 'string' ? scopeArg : undefined;
+      const limit = parseLimit(parsed.flags.limit);
+      const response = await dispatch(
+        'fixture-uses',
+        {
+          needle: needleArg,
+          ...(kinds ? { kinds } : {}),
+          ...(scope ? { scope } : {}),
           ...(limit ? { limit } : {}),
         },
         project,
@@ -713,7 +821,8 @@ async function main(): Promise<void> {
         }
       }
 
-      const response = await flowTrace(
+      const response = await dispatch(
+        'flow-trace',
         {
           originFile,
           originLine,
@@ -742,7 +851,8 @@ async function main(): Promise<void> {
       const jsonMode = parsed.flags.json === true;
       const pretty = parsed.flags.pretty === true;
 
-      const response = await typeDriftDetect(
+      const response = await dispatch(
+        'type-drift-detect',
         {
           ...(limit ? { limit } : {}),
           ...(scope ? { scope } : {}),
@@ -831,10 +941,79 @@ async function main(): Promise<void> {
 
       return;
     }
+    // --- schema-coverage ---
+    case 'schema-coverage': {
+      const tableArg = parsed.flags.table;
+      if (tableArg !== undefined && typeof tableArg !== 'string') {
+        console.error('--table requires a table name');
+        process.exit(2);
+      }
+      const columnArg = parsed.flags.column;
+      if (columnArg !== undefined && typeof columnArg !== 'string') {
+        console.error('--column requires a column name');
+        process.exit(2);
+      }
+      const scopeArg = parsed.flags.scope;
+      if (scopeArg !== undefined && typeof scopeArg !== 'string') {
+        console.error('--scope requires comma-separated glob patterns');
+        process.exit(2);
+      }
+      const reportArg = parsed.flags.report;
+      if (reportArg !== undefined && typeof reportArg !== 'string') {
+        console.error(
+          '--report requires a file path, e.g. --report .schema-coverage-report.md',
+        );
+        process.exit(2);
+      }
+      const limit = parseLimit(parsed.flags.limit);
+      const jsonMode = parsed.flags.json === true;
+      const pretty = parsed.flags.pretty === true;
+
+      const response = await dispatch(
+        'schema-coverage',
+        {
+          ...(tableArg ? { table: tableArg } : {}),
+          ...(columnArg ? { column: columnArg } : {}),
+          ...(scopeArg ? { scope: scopeArg } : {}),
+          ...(limit ? { limit } : {}),
+        },
+        project,
+        repoRoot,
+      );
+
+      if (response.error) {
+        if (pretty) {
+          console.error(
+            `error: ${response.error.kind} — ${response.error.message}`,
+          );
+          if (response.error.hint) console.error(`hint: ${response.error.hint}`);
+        }
+        console.log(JSON.stringify(response, null, pretty ? 2 : 0));
+        return;
+      }
+
+      // PRODUCT inv 30: the Markdown report is written ONLY when --report is
+      // passed — no repo writes by default.
+      if (reportArg !== undefined) {
+        const { writeFileSync } = await import('node:fs');
+        const reportPath = isAbsolute(reportArg)
+          ? reportArg
+          : resolve(repoRoot, reportArg);
+        writeFileSync(reportPath, renderSchemaCoverageReport(response));
+        console.error(`schema-coverage: Markdown report written to ${reportArg}`);
+      }
+
+      if (pretty && !jsonMode) {
+        console.log(renderSchemaCoverageReport(response));
+      } else {
+        console.log(JSON.stringify(response));
+      }
+      return;
+    }
     default: {
       console.error(`Unknown query: ${parsed.query}`);
       console.error(
-        'Valid queries: callers, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses, flow-trace, type-drift-detect',
+        'Valid queries: callers, callees, importers, references, column-reads, column-writes, type-evolution, dead-exports, reexport-chain, enum-uses, string-literal-uses, fixture-uses, flow-trace, type-drift-detect, schema-coverage',
       );
       process.exit(2);
     }

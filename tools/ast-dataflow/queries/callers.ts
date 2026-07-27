@@ -12,6 +12,7 @@ import {
   buildErrorResponse,
   AstResolverError,
 } from '../resolve';
+import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
 
@@ -71,7 +72,6 @@ export async function callers(
   const references = resolved.declaration.findReferences();
 
   const rows: CallSiteResult[] = [];
-  let totalEstimated = 0;
 
   for (const refSym of references) {
     for (const ref of refSym.getReferences()) {
@@ -80,9 +80,6 @@ export async function callers(
       const node = ref.getNode();
       const callExpr = findCallExpression(node);
       if (!callExpr) continue;
-
-      totalEstimated++;
-      if (rows.length >= limit) continue;
 
       const sf = node.getSourceFile();
       const lineCol = sf.getLineAndColumnAtPos(node.getStart());
@@ -102,12 +99,13 @@ export async function callers(
     }
   }
 
+  const t = truncateSpatial(rows, limit);
   return {
     query: 'callers',
     args: { ...args, limit },
-    results: rows,
-    truncated: totalEstimated > rows.length,
-    totalEstimated: totalEstimated > rows.length ? totalEstimated : undefined,
+    results: t.rows,
+    truncated: t.truncated,
+    totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
   };
 }

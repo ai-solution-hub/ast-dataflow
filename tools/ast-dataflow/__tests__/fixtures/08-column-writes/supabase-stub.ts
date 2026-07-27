@@ -1,35 +1,59 @@
 // Minimal Supabase client stub for column-writes fixture use.
-// The column-writes query detects typed-vs-untyped by checking whether
-// createClient is called with a Database type parameter at the call site.
+// Mirrors supabase-js 2.105.x builder generics: `.from(table)` echoes the
+// table-name literal into the builder's type arguments EVEN when DB = any
+// (untyped client) — only the schema-derived arguments degrade to `any`.
+// detectIsTyped must therefore inspect the Relation type argument's `Row`
+// shape, never the return-type text.
 
-export interface SupabaseClient<DB = unknown> {
-  from<T extends string>(
-    table: T,
+type SchemaOf<DB> = DB extends { public: infer S } ? S : any;
+
+export interface SupabaseClient<DB = any> {
+  from<TN extends string & keyof SchemaOf<DB>['Tables']>(
+    table: TN,
   ): MutationBuilder<
-    DB extends { public: { Tables: Record<T, { Row: infer R }> } }
-      ? R
-      : Record<string, unknown>
+    { PostgrestVersion: '12' },
+    SchemaOf<DB>,
+    SchemaOf<DB>['Tables'][TN],
+    TN
   >;
 }
 
-export interface MutationBuilder<Row> {
-  select(columns: string): MutationBuilder<Row>;
+type RowOf<Relation> = Relation extends { Row: infer R }
+  ? R
+  : Record<string, unknown>;
+
+export interface MutationBuilder<
+  ClientOptions,
+  Schema,
+  Relation,
+  TN extends string,
+> {
+  select(columns: string): MutationBuilder<ClientOptions, Schema, Relation, TN>;
   insert(
-    data: Partial<Row> | Partial<Row>[],
+    data: Partial<RowOf<Relation>> | Partial<RowOf<Relation>>[],
     opts?: Record<string, unknown>,
-  ): MutationBuilder<Row>;
-  update(data: Partial<Row>): MutationBuilder<Row>;
+  ): MutationBuilder<ClientOptions, Schema, Relation, TN>;
+  update(
+    data: Partial<RowOf<Relation>>,
+  ): MutationBuilder<ClientOptions, Schema, Relation, TN>;
   upsert(
-    data: Partial<Row> | Partial<Row>[],
+    data: Partial<RowOf<Relation>> | Partial<RowOf<Relation>>[],
     opts?: Record<string, unknown>,
-  ): MutationBuilder<Row>;
-  match(query: Record<string, unknown>): MutationBuilder<Row>;
-  eq(column: string, value: unknown): MutationBuilder<Row>;
-  single(): Promise<{ data: Row | null; error: unknown }>;
-  then(resolve: (v: { data: Row[] | null; error: unknown }) => void): void;
+  ): MutationBuilder<ClientOptions, Schema, Relation, TN>;
+  match(
+    query: Record<string, unknown>,
+  ): MutationBuilder<ClientOptions, Schema, Relation, TN>;
+  eq(
+    column: string,
+    value: unknown,
+  ): MutationBuilder<ClientOptions, Schema, Relation, TN>;
+  single(): Promise<{ data: RowOf<Relation> | null; error: unknown }>;
+  then(
+    resolve: (v: { data: RowOf<Relation>[] | null; error: unknown }) => void,
+  ): void;
 }
 
-export function createClient<DB = unknown>(
+export function createClient<DB = any>(
   _url: string,
   _key: string,
 ): SupabaseClient<DB> {
