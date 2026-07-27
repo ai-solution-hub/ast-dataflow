@@ -27,9 +27,7 @@ function row(
   table: string,
   column: string,
 ) {
-  return response.results.find(
-    (r) => r.table === table && r.column === column,
-  );
+  return response.results.find((r) => r.table === table && r.column === column);
 }
 
 describe('schema-coverage — per-column verdicts', () => {

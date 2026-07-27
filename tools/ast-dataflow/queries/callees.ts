@@ -73,7 +73,9 @@ function collectBodies(decl: Node): BodyCollection {
     if (body) return { outcome: 'ok', bodies: [body] };
     // Overload signature or ambient declaration — fall through to the
     // implementation when one exists.
-    const impl = Node.isOverloadable(decl) ? decl.getImplementation() : undefined;
+    const impl = Node.isOverloadable(decl)
+      ? decl.getImplementation()
+      : undefined;
     const implBody =
       impl && (Node.isBodyable(impl) || Node.isBodied(impl))
         ? impl.getBody()
@@ -195,7 +197,9 @@ function resolveByName(
   return decl ? { decl, resolution: 'indirect' } : { resolution: 'indirect' };
 }
 
-function resolveCallee(callExpr: CallExpression | NewExpression): ResolvedCallee {
+function resolveCallee(
+  callExpr: CallExpression | NewExpression,
+): ResolvedCallee {
   const isNew = callExpr.getKind() === SyntaxKind.NewExpression;
   const expr = unwrapExpression(callExpr.getExpression());
   const baseKind: CalleeCallKind = isNew ? 'new' : 'call';

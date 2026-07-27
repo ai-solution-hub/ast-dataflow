@@ -515,7 +515,10 @@ export async function schemaCoverage(
   for (const [table, columns] of schema) {
     const perColumn = new Map<string, ColumnAgg>();
     for (const column of columns) {
-      perColumn.set(column, { reads: emptyDirection(), writes: emptyDirection() });
+      perColumn.set(column, {
+        reads: emptyDirection(),
+        writes: emptyDirection(),
+      });
     }
     columnAggs.set(table, perColumn);
   }

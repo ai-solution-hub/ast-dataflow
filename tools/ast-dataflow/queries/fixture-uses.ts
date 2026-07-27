@@ -1,12 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import {
-  Project,
-  SyntaxKind,
-  ts,
-  type Node,
-  type SourceFile,
-} from 'ts-morph';
+import { Project, SyntaxKind, ts, type Node, type SourceFile } from 'ts-morph';
 import { glob } from 'tinyglobby';
 import { isPair, isScalar, isSeq, parseDocument, visit } from 'yaml';
 import type {

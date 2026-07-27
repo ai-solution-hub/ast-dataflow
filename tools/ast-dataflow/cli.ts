@@ -986,7 +986,8 @@ async function main(): Promise<void> {
           console.error(
             `error: ${response.error.kind} — ${response.error.message}`,
           );
-          if (response.error.hint) console.error(`hint: ${response.error.hint}`);
+          if (response.error.hint)
+            console.error(`hint: ${response.error.hint}`);
         }
         console.log(JSON.stringify(response, null, pretty ? 2 : 0));
         return;
@@ -1000,7 +1001,9 @@ async function main(): Promise<void> {
           ? reportArg
           : resolve(repoRoot, reportArg);
         writeFileSync(reportPath, renderSchemaCoverageReport(response));
-        console.error(`schema-coverage: Markdown report written to ${reportArg}`);
+        console.error(
+          `schema-coverage: Markdown report written to ${reportArg}`,
+        );
       }
 
       if (pretty && !jsonMode) {
