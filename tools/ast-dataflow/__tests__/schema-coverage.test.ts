@@ -1,9 +1,19 @@
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
-import { schemaCoverage, createProject } from '@/tools/ast-dataflow';
+import {
+  schemaCoverage,
+  createProject,
+  renderSchemaCoverageReport,
+} from '@/tools/ast-dataflow';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '21-schema-coverage');
 const CLI_PATH = resolve(__dirname, '..', 'cli.ts');
@@ -303,6 +313,319 @@ describe('schema-coverage — structured errors', () => {
   });
 });
 
+describe('schema-coverage — external evidence sidecars', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'schema-coverage-evidence-'));
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  /** Write a sidecar to the tmpdir and return its absolute path. */
+  function sidecar(name: string, doc: unknown): string {
+    const path = join(tmpDir, name);
+    writeFileSync(
+      path,
+      typeof doc === 'string' ? doc : JSON.stringify(doc, null, 2),
+    );
+    return path;
+  }
+
+  /** A contract-v1 row with the boilerplate filled in. */
+  function pyRow(over: Record<string, unknown>) {
+    return {
+      table: 'bid_projects',
+      column: 'title',
+      direction: 'write',
+      confidence: 'exact',
+      method: 'declare_row',
+      file: 'scripts/pipeline/writer.py',
+      line: 12,
+      source: 'declarative',
+      ...over,
+    };
+  }
+
+  function pySidecar(
+    name: string,
+    rows: unknown[],
+    source = 'ast-dataflow-py',
+  ) {
+    return sidecar(name, {
+      schemaVersion: 1,
+      source,
+      // Unknown top-level keys — and unknown keys nested inside them — must be
+      // tolerated and ignored, so a producer can enrich its output freely.
+      generatedBy: 'tools/ast_dataflow_py',
+      caveats: { sqlglot: false, sqlSitesUnresolvedDynamic: 3 },
+      rows,
+    });
+  }
+
+  it('flips a TS read-only column to wired on an exact external write', async () => {
+    const path = pySidecar('exact-write.json', [pyRow({})]);
+    const response = await runCoverage({ evidence: [path] });
+    const title = row(response, 'bid_projects', 'title');
+    expect(title).toMatchObject({
+      verdict: 'wired',
+      exactReads: 1,
+      exactWrites: 1,
+    });
+    expect(title?.evidence.writes).toContain('scripts/pipeline/writer.py:12');
+  });
+
+  it('leaves an unwired column undecidable — never write-only — on indirect-only evidence', async () => {
+    const path = pySidecar('indirect-write.json', [
+      pyRow({
+        column: 'budget_gbp',
+        confidence: 'indirect',
+        method: 'table-schema',
+        line: 41,
+      }),
+    ]);
+    const response = await runCoverage({ evidence: [path] });
+    expect(row(response, 'bid_projects', 'budget_gbp')).toMatchObject({
+      verdict: 'undecidable',
+      exactWrites: 0,
+      indirectWrites: 1,
+      evidence: { reads: [], writes: ['scripts/pipeline/writer.py:41'] },
+    });
+  });
+
+  it('spreads a table-scoped write row over every column as indirect smoke', async () => {
+    const path = pySidecar('star-write.json', [
+      pyRow({ column: '*', confidence: 'exact', method: 'dynamic_table' }),
+    ]);
+    const response = await runCoverage({ evidence: [path] });
+    // The row's own 'exact' confidence is discarded: a table-scoped write is
+    // smoke, so exact write counts stay exactly as the TS scan left them
+    // (insert on wired-clean.ts:38 names id + owner_id only).
+    const exactWritesBefore: Record<string, number> = {
+      budget_gbp: 0,
+      id: 1,
+      owner_id: 1,
+      title: 0,
+    };
+    for (const [column, exactWrites] of Object.entries(exactWritesBefore)) {
+      const r = row(response, 'bid_projects', column);
+      expect(r?.indirectWrites).toBeGreaterThanOrEqual(1);
+      expect(r?.exactWrites).toBe(exactWrites);
+    }
+    // The previously unwired column is now undecidable, not write-only.
+    expect(row(response, 'bid_projects', 'budget_gbp')?.verdict).toBe(
+      'undecidable',
+    );
+    // Untouched tables are unaffected.
+    expect(row(response, 'feed_articles', 'headline')?.verdict).toBe(
+      'read-only',
+    );
+  });
+
+  it('spreads a table-scoped read row over every column as wildcard reads', async () => {
+    const path = pySidecar('star-read.json', [
+      pyRow({ column: '*', direction: 'read', method: 'dynamic_table' }),
+    ]);
+    const response = await runCoverage({ evidence: [path] });
+    for (const column of ['budget_gbp', 'id', 'owner_id', 'title']) {
+      expect(row(response, 'bid_projects', column)?.wildcardReads).toBe(1);
+    }
+    expect(row(response, 'bid_projects', 'budget_gbp')?.verdict).toBe(
+      'undecidable',
+    );
+    // Wildcard reads are not wiring evidence — owner_id stays write-only.
+    expect(row(response, 'bid_projects', 'owner_id')?.verdict).toBe(
+      'write-only',
+    );
+  });
+
+  it('counts rows naming an unknown table or column in a caveat instead of dropping them', async () => {
+    const path = pySidecar('unknown.json', [
+      pyRow({ table: 'no_such_table' }),
+      pyRow({ table: 'no_such_table', column: 'whatever', line: 13 }),
+      pyRow({ column: 'no_such_column', line: 14 }),
+    ]);
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.error).toBeUndefined();
+    expect(response.results).toHaveLength(12);
+    expect(response.caveats?.evidenceUnknownTables).toEqual({
+      'ast-dataflow-py:bid_projects.no_such_column': 1,
+      'ast-dataflow-py:no_such_table': 2,
+    });
+    // A dropped-table row must not silently become wiring evidence anywhere.
+    expect(row(response, 'bid_projects', 'title')?.verdict).toBe('read-only');
+  });
+
+  it('reports merged sidecars in the caveats and retires the Python invisible surface', async () => {
+    const path = pySidecar('caveats.json', [pyRow({})]);
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.caveats?.scan).toContain('ast-dataflow-py');
+    expect(response.caveats?.scan).toContain('external evidence sidecars');
+    expect(response.caveats?.invisibleSurfaces).toHaveLength(3);
+    expect(response.caveats?.invisibleSurfaces).not.toContain(
+      'the Python pipeline (scripts/**/*.py)',
+    );
+    expect(response.caveats?.mergedEvidence).toEqual([
+      { source: 'ast-dataflow-py', path, rows: 1 },
+    ]);
+    expect(response.caveats?.evidenceUnknownTables).toBeUndefined();
+  });
+
+  it('keeps the Python invisible surface when the merged sidecar is from another producer', async () => {
+    const path = pySidecar(
+      'other-source.json',
+      [pyRow({})],
+      'ast-dataflow-sql',
+    );
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.caveats?.invisibleSurfaces).toHaveLength(4);
+    expect(response.caveats?.invisibleSurfaces).toContain(
+      'the Python pipeline (scripts/**/*.py)',
+    );
+  });
+
+  it('merges every sidecar when several are supplied', async () => {
+    const first = pySidecar('multi-a.json', [pyRow({})]);
+    const second = pySidecar(
+      'multi-b.json',
+      [pyRow({ column: 'budget_gbp', direction: 'read', line: 20 })],
+      'ast-dataflow-sql',
+    );
+    const response = await runCoverage({ evidence: [first, second] });
+    expect(row(response, 'bid_projects', 'title')?.verdict).toBe('wired');
+    expect(row(response, 'bid_projects', 'budget_gbp')?.verdict).toBe(
+      'read-only',
+    );
+    expect(response.caveats?.mergedEvidence).toHaveLength(2);
+  });
+
+  it('lists merged sidecars in the Markdown report caveat header', async () => {
+    const path = pySidecar('report.json', [pyRow({})]);
+    const report = renderSchemaCoverageReport(
+      await runCoverage({ evidence: [path] }),
+    );
+    expect(report).toContain('- Merged external evidence sidecars:');
+    expect(report).toContain(`ast-dataflow-py — \`${path}\`, 1 row(s)`);
+  });
+
+  it('accepts a repo-root-relative path and reports it relative', async () => {
+    // The checked-in fixture sidecar, addressed the way CI would address a
+    // producer's output: relative to the repo root (here, the fixture dir).
+    const response = await runCoverage({ evidence: ['evidence-py.json'] });
+    expect(response.caveats?.mergedEvidence).toEqual([
+      { source: 'ast-dataflow-py', path: 'evidence-py.json', rows: 1 },
+    ]);
+    // Wildcard-only before, now exact-read + the untyped TS write → read-only.
+    expect(row(response, 'feed_articles', 'retention_class')).toMatchObject({
+      verdict: 'read-only',
+      exactReads: 1,
+      wildcardReads: 1,
+      indirectWrites: 1,
+      evidence: {
+        reads: ['scripts/pipeline/retention.py:88', 'wildcard-poisoned.ts:32'],
+      },
+    });
+  });
+});
+
+describe('schema-coverage — evidence sidecar rejection', () => {
+  const tmpDir = mkdtempSync(join(tmpdir(), 'schema-coverage-bad-'));
+
+  afterAll(() => {
+    rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  function badSidecar(name: string, body: string): string {
+    const path = join(tmpDir, name);
+    writeFileSync(path, body);
+    return path;
+  }
+
+  it('rejects a malformed sidecar with a parse_error naming the file', async () => {
+    const path = badSidecar('malformed.json', '{ "schemaVersion": 1, rows: [');
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.error?.message).toContain(path);
+    expect(response.error?.message).toContain('not valid JSON');
+    expect(response.results).toEqual([]);
+  });
+
+  it('rejects a sidecar declaring an unsupported schemaVersion', async () => {
+    const path = badSidecar(
+      'version.json',
+      JSON.stringify({ schemaVersion: 2, source: 'ast-dataflow-py', rows: [] }),
+    );
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.error?.message).toContain('schemaVersion 2');
+    expect(response.results).toEqual([]);
+  });
+
+  it('rejects a sidecar with no rows array', async () => {
+    const path = badSidecar(
+      'no-rows.json',
+      JSON.stringify({ schemaVersion: 1, source: 'ast-dataflow-py' }),
+    );
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.error?.message).toContain('`rows` array');
+  });
+
+  it('rejects a row with a direction outside the contract, naming the row index', async () => {
+    const path = badSidecar(
+      'bad-row.json',
+      JSON.stringify({
+        schemaVersion: 1,
+        source: 'ast-dataflow-py',
+        rows: [
+          {
+            table: 'bid_projects',
+            column: 'title',
+            direction: 'delete',
+            confidence: 'exact',
+            method: 'declare_row',
+            file: 'scripts/x.py',
+            line: 1,
+            source: 'declarative',
+          },
+        ],
+      }),
+    );
+    const response = await runCoverage({ evidence: [path] });
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.error?.message).toContain("row 0 has direction 'delete'");
+  });
+
+  it('rejects an unreadable sidecar path with unknown_file', async () => {
+    const response = await runCoverage({
+      evidence: [join(tmpDir, 'never-written.json')],
+    });
+    expect(response.error?.kind).toBe('unknown_file');
+    expect(response.error?.message).toContain('never-written.json');
+    expect(response.results).toEqual([]);
+  });
+});
+
+describe('schema-coverage — verdicts without evidence are unchanged', () => {
+  it('omits the sidecar caveat fields and keeps the TS-only scan disclosure', async () => {
+    const response = await runCoverage();
+    expect(response.caveats?.scan).toBe(
+      'Verdicts are based on TypeScript query-chain evidence only (.from() chains in the tsconfig corpus). No SQL is parsed.',
+    );
+    expect(response.caveats?.invisibleSurfaces).toContain(
+      'the Python pipeline (scripts/**/*.py)',
+    );
+    expect(response.caveats).not.toHaveProperty('mergedEvidence');
+    expect(response.caveats).not.toHaveProperty('evidenceUnknownTables');
+  });
+
+  it('treats an empty evidence list as no evidence at all', async () => {
+    const withoutFlag = await runCoverage();
+    const emptyList = await runCoverage({ evidence: [] });
+    expect(emptyList.results).toEqual(withoutFlag.results);
+    expect(emptyList.caveats).toEqual(withoutFlag.caveats);
+    expect(emptyList.summary).toEqual(withoutFlag.summary);
+  });
+});
+
 describe('schema-coverage — CLI report output', () => {
   const tmpDir = mkdtempSync(join(tmpdir(), 'schema-coverage-'));
   const reportPath = join(tmpDir, 'report.md');
@@ -328,6 +651,51 @@ describe('schema-coverage — CLI report output', () => {
       expect(envelope.query).toBe('schema-coverage');
       expect(envelope.results).toHaveLength(12);
       expect(existsSync(reportPath)).toBe(false);
+    },
+  );
+
+  it(
+    'merges every --evidence occurrence, comma-separated or repeated',
+    { timeout: 60_000 },
+    () => {
+      const rows = (column: string) => [
+        {
+          table: 'bid_projects',
+          column,
+          direction: 'write',
+          confidence: 'exact',
+          method: 'declare_row',
+          file: 'scripts/pipeline/writer.py',
+          line: 12,
+          source: 'declarative',
+        },
+      ];
+      const paths = ['a', 'b', 'c'].map((name, i) => {
+        const path = join(tmpDir, `evidence-${name}.json`);
+        writeFileSync(
+          path,
+          JSON.stringify({
+            schemaVersion: 1,
+            source: 'ast-dataflow-py',
+            rows: rows(['title', 'title', 'budget_gbp'][i]),
+          }),
+        );
+        return path;
+      });
+      const stdout = runCli([
+        '--evidence',
+        `${paths[0]},${paths[1]}`,
+        '--evidence',
+        paths[2],
+      ]);
+      const envelope = JSON.parse(stdout);
+      expect(envelope.caveats.mergedEvidence).toHaveLength(3);
+      expect(
+        envelope.results.find(
+          (r: { table: string; column: string }) =>
+            r.table === 'bid_projects' && r.column === 'title',
+        ).exactWrites,
+      ).toBe(2); // title has no TS exact write — both rows come from sidecars
     },
   );
 

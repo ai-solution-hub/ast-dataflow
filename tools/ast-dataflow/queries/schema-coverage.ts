@@ -18,13 +18,24 @@
  *   - indirect/wildcard rows never count as wiring evidence (they are
  *     unfalsifiable — a nonexistent column collects both).
  *
+ * Verdicts may additionally merge EXTERNAL evidence sidecars (`args.evidence`
+ * / `--evidence`; contract v1 lives in types.ts): rows of column access
+ * observed by a producer this scan cannot see — first the Python-side
+ * scanner. Merged rows aggregate exactly like TS sites (exact evidence wires
+ * a column; wildcard/indirect never does), a table-scoped `column: '*'` row
+ * lands as a wildcard read / indirect write on every column of the table, and
+ * the merged surface drops out of the invisible-surfaces caveat. Verdict
+ * logic itself is untouched: evidence changes, not the rules.
+ *
  * Out of scope (reported as static caveats, no SQL parsing): RPC function
  * bodies, api-schema views, external PostgREST consumers, and the Python
- * pipeline. `.rpc()` payload heuristics are also excluded — they are
- * table-blind and never fire on this repo's `p_*` param convention.
+ * pipeline unless its sidecar is merged. `.rpc()` payload heuristics are also
+ * excluded — they are table-blind and never fire on this repo's `p_*` param
+ * convention.
  */
 
-import { resolve } from 'node:path';
+import { readFileSync } from 'node:fs';
+import { isAbsolute, relative, resolve } from 'node:path';
 import {
   Project,
   SyntaxKind,
@@ -38,6 +49,7 @@ import {
 import type {
   Confidence,
   ErrorKind,
+  EvidenceSidecarRow,
   SchemaCoverageArgs,
   SchemaCoverageCaveats,
   SchemaCoverageResponse,
@@ -64,6 +76,15 @@ const DEFAULT_LIMIT = 2000;
 const SCHEMA_TYPES_PATH = 'supabase/types/database.types.ts';
 
 const EVIDENCE_REFS_PER_DIRECTION = 3;
+
+/** The only evidence-sidecar contract this consumer understands. */
+const EVIDENCE_SCHEMA_VERSION = 1;
+
+/**
+ * The sidecar source that covers the Python pipeline. Merging one retires
+ * that entry from `invisibleSurfaces` — the surface is no longer invisible.
+ */
+const PYTHON_EVIDENCE_SOURCE = 'ast-dataflow-py';
 
 /**
  * `.match()` is deliberately NOT mutation evidence here (unlike
@@ -240,6 +261,21 @@ function emptyDirection(): DirectionAgg {
   return { exact: 0, wildcard: 0, indirect: 0, refs: [] };
 }
 
+/** Bump one confidence bucket and keep the ref — the only mutation path. */
+function recordEvidence(
+  agg: ColumnAgg,
+  direction: 'reads' | 'writes',
+  confidence: Confidence,
+  file: string,
+  line: number,
+): void {
+  const dir = agg[direction];
+  if (confidence === 'exact') dir.exact++;
+  else if (confidence === 'wildcard') dir.wildcard++;
+  else dir.indirect++;
+  dir.refs.push({ file, line, confidence });
+}
+
 /**
  * The set of table names a dynamic `.from(<arg>)` site could touch, derived
  * from the argument's TYPE: a single string-literal type (e.g. a call whose
@@ -328,11 +364,7 @@ function classifyChain(
   ): void => {
     const agg = columnAggs.get(column);
     if (!agg) return;
-    const dir = agg[direction];
-    if (confidence === 'exact') dir.exact++;
-    else if (confidence === 'wildcard') dir.wildcard++;
-    else dir.indirect++;
-    dir.refs.push({ file: relPath, line, confidence });
+    recordEvidence(agg, direction, confidence, relPath, line);
   };
 
   for (const { method, callExpr } of chain) {
@@ -388,6 +420,192 @@ function classifyChain(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+// External evidence sidecars — load, validate, merge (contract v1)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface LoadedSidecar {
+  /** Top-level `source`: the producing tool. */
+  source: string;
+  /** Repo-relative when the file is under the repo root, else as supplied. */
+  path: string;
+  rows: EvidenceSidecarRow[];
+}
+
+/** A malformed sidecar is never a silent skip — it fails the whole query. */
+function sidecarFailure(
+  label: string,
+  reason: string,
+  hint: string,
+): SchemaParseFailure {
+  return {
+    kind: 'parse_error',
+    message: `Evidence sidecar '${label}' ${reason}.`,
+    hint,
+  };
+}
+
+const SIDECAR_SHAPE_HINT =
+  "Contract v1: { schemaVersion: 1, source, rows: [{ table, column ('*' for table-scoped), direction: 'read'|'write', confidence: 'exact'|'wildcard'|'indirect', method, file, line, source }] }.";
+
+/** Validate one row against contract v1; returns the reason on rejection. */
+function validateRow(entry: unknown): EvidenceSidecarRow | string {
+  if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
+    return 'is not an object';
+  }
+  const row = entry as Record<string, unknown>;
+  const strings = ['table', 'column', 'method', 'file', 'source'] as const;
+  for (const key of strings) {
+    if (typeof row[key] !== 'string' || row[key] === '') {
+      return `has no non-empty string '${key}'`;
+    }
+  }
+  if (row.direction !== 'read' && row.direction !== 'write') {
+    return `has direction '${String(row.direction)}' (expected 'read' or 'write')`;
+  }
+  if (
+    typeof row.confidence !== 'string' ||
+    !(row.confidence in CONFIDENCE_RANK)
+  ) {
+    return `has confidence '${String(row.confidence)}' (expected ${Object.keys(CONFIDENCE_RANK).join(', ')})`;
+  }
+  if (typeof row.line !== 'number' || !Number.isFinite(row.line)) {
+    return `has line '${String(row.line)}' (expected a number)`;
+  }
+  return row as unknown as EvidenceSidecarRow;
+}
+
+/**
+ * Read and validate every sidecar path, or return the first failure. Loading
+ * happens before the corpus walk so a bad sidecar fails fast — and always
+ * loudly: a silently skipped sidecar would present TS-only verdicts as if
+ * they carried the external evidence.
+ */
+function loadEvidenceSidecars(
+  paths: string[],
+  repoRoot: string,
+): LoadedSidecar[] | SchemaParseFailure {
+  const loaded: LoadedSidecar[] = [];
+  for (const supplied of paths) {
+    const absPath = isAbsolute(supplied)
+      ? supplied
+      : resolve(repoRoot, supplied);
+    const rel = relative(repoRoot, absPath).split('\\').join('/');
+    const label = rel.startsWith('..') ? supplied : rel;
+
+    let raw: string;
+    try {
+      raw = readFileSync(absPath, 'utf8');
+    } catch {
+      return {
+        kind: 'unknown_file',
+        message: `Cannot read evidence sidecar '${label}' (resolved to ${absPath}).`,
+        hint: 'Paths are repo-root-relative or absolute; the producer must write the sidecar before this query runs.',
+      };
+    }
+
+    let parsed: unknown;
+    try {
+      parsed = JSON.parse(raw);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return sidecarFailure(
+        label,
+        `is not valid JSON: ${message}`,
+        SIDECAR_SHAPE_HINT,
+      );
+    }
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return sidecarFailure(label, 'is not a JSON object', SIDECAR_SHAPE_HINT);
+    }
+
+    // Unknown top-level keys (caveats, sqlglot, generatedBy, …) are tolerated:
+    // producers may enrich their output without breaking this consumer.
+    const doc = parsed as Record<string, unknown>;
+    if (doc.schemaVersion !== EVIDENCE_SCHEMA_VERSION) {
+      return sidecarFailure(
+        label,
+        `declares schemaVersion ${JSON.stringify(doc.schemaVersion)} (this consumer reads ${EVIDENCE_SCHEMA_VERSION})`,
+        SIDECAR_SHAPE_HINT,
+      );
+    }
+    if (typeof doc.source !== 'string' || doc.source === '') {
+      return sidecarFailure(
+        label,
+        'has no non-empty top-level string `source`',
+        SIDECAR_SHAPE_HINT,
+      );
+    }
+    if (!Array.isArray(doc.rows)) {
+      return sidecarFailure(label, 'has no `rows` array', SIDECAR_SHAPE_HINT);
+    }
+
+    const rows: EvidenceSidecarRow[] = [];
+    for (const [index, entry] of (doc.rows as unknown[]).entries()) {
+      const row = validateRow(entry);
+      if (typeof row === 'string') {
+        return sidecarFailure(label, `row ${index} ${row}`, SIDECAR_SHAPE_HINT);
+      }
+      rows.push(row);
+    }
+    loaded.push({ source: doc.source, path: label, rows });
+  }
+  return loaded;
+}
+
+/**
+ * Merge one sidecar's rows into the per-column aggregation, exactly as the
+ * corpus walk merges TS sites. Rows naming a table or column outside the
+ * enumerated schema are counted in `unknownTables` instead of dropped: a
+ * producer that has drifted from the schema must be visible in the caveats,
+ * not silently absent from the verdicts.
+ */
+function mergeSidecar(
+  sidecar: LoadedSidecar,
+  schema: Map<string, string[]>,
+  columnAggs: Map<string, Map<string, ColumnAgg>>,
+  unknownTables: Map<string, number>,
+): void {
+  const bumpUnknown = (key: string): void => {
+    unknownTables.set(key, (unknownTables.get(key) ?? 0) + 1);
+  };
+
+  for (const row of sidecar.rows) {
+    const columns = schema.get(row.table);
+    const perColumn = columnAggs.get(row.table);
+    if (!columns || !perColumn) {
+      bumpUnknown(`${sidecar.source}:${row.table}`);
+      continue;
+    }
+    const direction = row.direction === 'read' ? 'reads' : 'writes';
+
+    if (row.column === '*') {
+      // Table-scoped: the producer proved the TABLE was touched, not which
+      // column. A dynamic read may have read any of them (wildcard); a
+      // dynamic write is smoke, not proof (indirect) — so a '*' write can
+      // never flip a column to 'write-only'.
+      const confidence: Confidence =
+        direction === 'reads' ? 'wildcard' : 'indirect';
+      for (const column of columns) {
+        const agg = perColumn.get(column);
+        if (agg) recordEvidence(agg, direction, confidence, row.file, row.line);
+      }
+      continue;
+    }
+
+    const agg = perColumn.get(row.column);
+    if (!agg) {
+      bumpUnknown(`${sidecar.source}:${row.table}.${row.column}`);
+      continue;
+    }
+    recordEvidence(agg, direction, row.confidence, row.file, row.line);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 // Verdicts + assembly
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -424,18 +642,42 @@ function topRefs(refs: EvidenceRef[]): string[] {
 
 function staticCaveats(
   unattributable: Map<string, number>,
+  sidecars: LoadedSidecar[],
+  unknownTables: Map<string, number>,
 ): SchemaCoverageCaveats {
+  const sources = [...new Set(sidecars.map((s) => s.source))];
+  const pythonMerged = sources.includes(PYTHON_EVIDENCE_SOURCE);
   return {
-    scan: 'Verdicts are based on TypeScript query-chain evidence only (.from() chains in the tsconfig corpus). No SQL is parsed.',
+    scan:
+      sidecars.length > 0
+        ? `Verdicts combine TypeScript query-chain evidence (.from() chains in the tsconfig corpus) with merged external evidence sidecars: ${sources.join(', ')}. No SQL is parsed on the TypeScript side.`
+        : 'Verdicts are based on TypeScript query-chain evidence only (.from() chains in the tsconfig corpus). No SQL is parsed.',
     invisibleSurfaces: [
       'RPC function bodies (SQL)',
       'api-schema views',
       'external PostgREST consumers',
-      'the Python pipeline (scripts/**/*.py)',
+      // A merged sidecar makes its surface visible — the entry would be a lie.
+      ...(pythonMerged ? [] : ['the Python pipeline (scripts/**/*.py)']),
     ],
     unattributableSites: Object.fromEntries(
       [...unattributable.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
     ),
+    ...(sidecars.length > 0
+      ? {
+          mergedEvidence: sidecars.map(({ source, path, rows }) => ({
+            source,
+            path,
+            rows: rows.length,
+          })),
+        }
+      : {}),
+    ...(unknownTables.size > 0
+      ? {
+          evidenceUnknownTables: Object.fromEntries(
+            [...unknownTables.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
+          ),
+        }
+      : {}),
   };
 }
 
@@ -508,6 +750,21 @@ export async function schemaCoverage(
     }
   }
 
+  // Sidecars load before the walk: a malformed one must fail the query, not
+  // waste a corpus traversal first.
+  const sidecars = args.evidence?.length
+    ? loadEvidenceSidecars(args.evidence, repoRoot)
+    : [];
+  if (!Array.isArray(sidecars)) {
+    return errorResponse(
+      argsEcho,
+      sidecars.kind,
+      sidecars.message,
+      sidecars.hint,
+      Date.now() - started,
+    );
+  }
+
   const scopeMatch = buildScopeMatcher(args.scope);
 
   // Aggregation state for the single corpus walk.
@@ -524,6 +781,7 @@ export async function schemaCoverage(
   }
   const tableSmoke = new Map<string, number>();
   const unattributable = new Map<string, number>();
+  const evidenceUnknownTables = new Map<string, number>();
 
   try {
     for (const sf of project.getSourceFiles()) {
@@ -568,6 +826,12 @@ export async function schemaCoverage(
       'Check that the project compiles without errors.',
       Date.now() - started,
     );
+  }
+
+  // External evidence joins the SAME aggregation the walk filled — verdictFor
+  // never learns where a row came from.
+  for (const sidecar of sidecars) {
+    mergeSidecar(sidecar, schema, columnAggs, evidenceUnknownTables);
   }
 
   // Assemble per-column verdict rows.
@@ -628,7 +892,7 @@ export async function schemaCoverage(
     truncated,
     ...(truncated ? { totalEstimated: rows.length } : {}),
     durationMs: Date.now() - started,
-    caveats: staticCaveats(unattributable),
+    caveats: staticCaveats(unattributable, sidecars, evidenceUnknownTables),
     summary,
   };
 }
@@ -706,6 +970,14 @@ export function renderSchemaCoverageReport(
     lines.push(
       `- Invisible to this scan: ${caveats.invisibleSurfaces.join('; ')}.`,
     );
+    if (caveats.mergedEvidence && caveats.mergedEvidence.length > 0) {
+      lines.push('- Merged external evidence sidecars:');
+      for (const merged of caveats.mergedEvidence) {
+        lines.push(
+          `  - ${merged.source} — \`${merged.path}\`, ${merged.rows} row(s)`,
+        );
+      }
+    }
     const unattrib = Object.entries(caveats.unattributableSites);
     if (unattrib.length > 0) {
       lines.push(

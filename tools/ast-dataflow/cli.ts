@@ -46,6 +46,26 @@ const REFERENCE_KINDS: ReferenceKind[] = [
 const FIXTURE_USE_KINDS: FixtureUseKind[] = ['key', 'value'];
 
 /**
+ * Collect every value of a repeatable flag, splitting comma-separated lists
+ * (`--evidence a.json,b.json --evidence c.json` → three paths). Read from the
+ * raw argv because `parse` keeps only the LAST value per key — repeating a
+ * flag there would silently drop the earlier ones.
+ */
+function collectRepeatable(argv: string[], flag: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] !== `--${flag}`) continue;
+    const next = argv[i + 1];
+    if (!next || next.startsWith('--')) continue;
+    for (const part of next.split(',')) {
+      const trimmed = part.trim();
+      if (trimmed) out.push(trimmed);
+    }
+  }
+  return out;
+}
+
+/**
  * Parse `--limit` into a positive integer, or exit 2 on a malformed value
  * (PRODUCT.md invariant 27: malformed arguments exit non-zero with the
  * offending argument and its expected shape). Previously a non-numeric limit
@@ -246,12 +266,13 @@ function printCatalogue(): void {
               '[--table <table-name>]',
               '[--column <column-name>]',
               '[--scope GLOB[,GLOB...]]',
+              '[--evidence <path>[,<path>...]] (repeatable)',
               '[--limit N]',
               '[--report <path>]',
               '[--json | --pretty]',
             ],
             example:
-              'bun run ast-dataflow schema-coverage --report .schema-coverage-report.md',
+              'bun run ast-dataflow schema-coverage --evidence .ast-dataflow-py-evidence.json --report .schema-coverage-report.md',
           },
           // --- flow-trace ---
           {
@@ -965,6 +986,13 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
+      if (parsed.flags.evidence === true) {
+        console.error(
+          '--evidence requires a sidecar path, e.g. --evidence .ast-dataflow-py-evidence.json',
+        );
+        process.exit(2);
+      }
+      const evidence = collectRepeatable(process.argv.slice(2), 'evidence');
       const limit = parseLimit(parsed.flags.limit);
       const jsonMode = parsed.flags.json === true;
       const pretty = parsed.flags.pretty === true;
@@ -975,6 +1003,7 @@ async function main(): Promise<void> {
           ...(tableArg ? { table: tableArg } : {}),
           ...(columnArg ? { column: columnArg } : {}),
           ...(scopeArg ? { scope: scopeArg } : {}),
+          ...(evidence.length > 0 ? { evidence } : {}),
           ...(limit ? { limit } : {}),
         },
         project,

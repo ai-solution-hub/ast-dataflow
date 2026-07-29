@@ -25,7 +25,8 @@ export interface CallSiteResult extends BaseResult {
  * Structured error kinds (PRODUCT.md invariant 29).
  *
  * - unknown_file    — the file path supplied to a symbol query is not in the
- *                     ts-morph project (not in tsconfig.json's file set).
+ *                     ts-morph project (not in tsconfig.json's file set), or
+ *                     (schema-coverage) an --evidence sidecar is unreadable.
  * - parse_error     — the input is syntactically malformed (e.g. symbol string
  *                     with no colon separator, empty required argument).
  * - ambiguous_symbol — the symbol name resolves to more than one distinct
@@ -766,12 +767,69 @@ export type SchemaCoverageVerdict =
  *            --scope). The schema enumeration is never scoped.
  * - limit  — max result rows; default 2000 (the whole schema fits — rows are
  *            per-column verdicts, so a plain cap applies, not truncateSpatial).
+ * - evidence — external evidence sidecar paths (repo-root-relative or
+ *            absolute). Their rows merge into the per-column aggregation
+ *            before verdicts are issued; `scope` never filters them (they
+ *            describe surfaces outside the tsconfig corpus).
  */
 export interface SchemaCoverageArgs {
   table?: string;
   column?: string;
   scope?: string;
   limit?: number;
+  evidence?: string[];
+}
+
+// --- external evidence sidecars (contract v1) ---
+
+/**
+ * One column-access row of an evidence sidecar.
+ *
+ * - table/column — schema coordinates. `column: '*'` is table-scoped: the
+ *                  producer knows the table was touched but not which columns.
+ * - direction    — 'read' | 'write', the same split the TS scan aggregates.
+ * - confidence   — 1:1 with the TS confidence buckets. Ignored for `'*'`
+ *                  rows, which are re-graded as table-scoped smoke.
+ * - method       — the producer's detector method (e.g. 'declare_row'),
+ *                  carried for provenance; verdicts never branch on it.
+ * - file/line    — the producing site, rendered as an evidence ref verbatim
+ *                  (a `scripts/x.py:12` ref is self-identifying — no prefix).
+ * - source       — the detector WITHIN the producing tool (the tool itself is
+ *                  the sidecar's top-level `source`).
+ */
+export interface EvidenceSidecarRow {
+  table: string;
+  column: string;
+  direction: 'read' | 'write';
+  confidence: Confidence;
+  method: string;
+  file: string;
+  line: number;
+  source: string;
+}
+
+/**
+ * An evidence sidecar file (schemaVersion 1): rows of column access observed
+ * by a producer the TypeScript scan cannot see — first producer the Python
+ * pipeline scanner (`source: 'ast-dataflow-py'`). Unknown top-level keys
+ * (`caveats`, `sqlglot`, `generatedBy`, …) are tolerated and ignored, so a
+ * producer can enrich its output without breaking this consumer.
+ */
+export interface EvidenceSidecar {
+  schemaVersion: 1;
+  /** The producing TOOL (row-level `source` names the detector within it). */
+  source: string;
+  rows: EvidenceSidecarRow[];
+}
+
+/** One sidecar that was successfully merged, as reported in the caveats. */
+export interface MergedEvidenceSource {
+  /** The sidecar's top-level `source` — the producing tool. */
+  source: string;
+  /** Repo-relative path when the file is under the repo root, else as given. */
+  path: string;
+  /** Rows read from the file (including rows that landed in the unknown map). */
+  rows: number;
 }
 
 /**
@@ -819,11 +877,21 @@ export interface SchemaCoverageResult {
  * identifiers etc.), keyed by repo-relative file. These are per-file counts,
  * not per-column rows — access through them is invisible to every verdict,
  * so they are reported loudly here instead of silently dropped.
+ *
+ * When evidence sidecars are merged, `scan` and `invisibleSurfaces` narrow to
+ * match (a merged surface is no longer invisible) and two fields appear:
+ * `mergedEvidence` (provenance for every sidecar) and `evidenceUnknownTables`
+ * (sidecar rows naming a table or column that is not in the enumerated
+ * schema, keyed `<sidecar-source>:<table>` / `<sidecar-source>:<table>.<column>`
+ * — a producer drifting from the schema reports loudly instead of vanishing).
+ * Both are omitted entirely when no sidecar was merged / nothing was unknown.
  */
 export interface SchemaCoverageCaveats {
   scan: string;
   invisibleSurfaces: string[];
   unattributableSites: Record<string, number>;
+  mergedEvidence?: MergedEvidenceSource[];
+  evidenceUnknownTables?: Record<string, number>;
 }
 
 /**

@@ -88,7 +88,7 @@ class ColumnUseRow:
     columnPath: str
     table: str
     enclosing: str
-    source: Literal["sql", "supabase-py"]
+    source: Literal["sql", "supabase-py", "declarative"]
     chainMethod: str | None = None
 
     def to_json(self) -> dict[str, object]:
@@ -158,21 +158,71 @@ class _EnclosingTracker(ast.NodeVisitor):
         self._visit_function(node)
 
 
-def _extract_sql_literal(node: ast.expr) -> _SqlLiteral | None:
-    """Extract SQL text from a call argument: plain string or f-string."""
+def _extract_sql_literal(
+    node: ast.expr, consts: dict[str, "_SqlLiteral"] | None = None
+) -> _SqlLiteral | None:
+    """Extract SQL text from a call argument.
+
+    Handles plain strings, f-strings, bare Names resolving to module-level
+    string constants (the `conn.fetch(_SQL_FOO, ...)` convention —
+    l_records passes ALL its SQL this way; 33 sites were invisible before
+    this hop), and f-strings whose interpolations resolve to such
+    constants (`f"{_SQL_FOO} LIMIT $2"`). An f-string whose every part
+    resolves statically is NOT dynamic — its text is exact.
+    """
     if isinstance(node, ast.Constant) and isinstance(node.value, str):
         return _SqlLiteral(text=node.value, node=node, dynamic=False)
+    if isinstance(node, ast.Name) and consts is not None:
+        resolved = consts.get(node.id)
+        if resolved is not None:
+            return _SqlLiteral(
+                text=resolved.text, node=node, dynamic=resolved.dynamic
+            )
+        return None
     if isinstance(node, ast.JoinedStr):
-        # f-string — join static parts, replace interpolations with a
-        # placeholder so sqlglot can still usually parse the skeleton.
         parts: list[str] = []
+        dynamic = False
         for value in node.values:
             if isinstance(value, ast.Constant) and isinstance(value.value, str):
                 parts.append(value.value)
+            elif (
+                isinstance(value, ast.FormattedValue)
+                and isinstance(value.value, ast.Name)
+                and consts is not None
+                and value.value.id in consts
+            ):
+                resolved = consts[value.value.id]
+                parts.append(resolved.text)
+                dynamic = dynamic or resolved.dynamic
             else:
+                # unresolvable interpolation — placeholder keeps the
+                # skeleton usually parseable for sqlglot.
                 parts.append(" __dyn__ ")
-        return _SqlLiteral(text="".join(parts), node=node, dynamic=True)
+                dynamic = True
+        return _SqlLiteral(text="".join(parts), node=node, dynamic=dynamic)
     return None
+
+
+def collect_module_str_consts(tree: ast.Module) -> dict[str, _SqlLiteral]:
+    """Module-level single-Name string-constant assignments, in order.
+
+    Later f-string constants may reference earlier ones; resolution uses
+    the constants collected so far, so definition order is respected.
+    """
+    consts: dict[str, _SqlLiteral] = {}
+    for stmt in tree.body:
+        target: ast.expr | None = None
+        value: ast.expr | None = None
+        if isinstance(stmt, ast.Assign) and len(stmt.targets) == 1:
+            target, value = stmt.targets[0], stmt.value
+        elif isinstance(stmt, ast.AnnAssign) and stmt.value is not None:
+            target, value = stmt.target, stmt.value
+        if not isinstance(target, ast.Name) or value is None:
+            continue
+        literal = _extract_sql_literal(value, consts)
+        if literal is not None:
+            consts[target.id] = literal
+    return consts
 
 
 _WORD_RE_CACHE: dict[str, re.Pattern[str]] = {}
@@ -301,7 +351,8 @@ def _supabase_chain(call: ast.Call) -> list[tuple[str, ast.Call]]:
     return chain
 
 
-def _select_contains_column(select_str: str, column: str) -> bool:
+def _select_tokens(select_str: str) -> list[str]:
+    """Column tokens of a PostgREST select string (aliases resolved)."""
     stripped = select_str
     prev = None
     while prev != stripped:
@@ -315,7 +366,31 @@ def _select_contains_column(select_str: str, column: str) -> bool:
         token = token.split()[0] if token.split() else ""
         if token:
             tokens.append(token)
-    return column in tokens
+    return tokens
+
+
+def _select_contains_column(select_str: str, column: str) -> bool:
+    return column in _select_tokens(select_str)
+
+
+def _declarative_rows(
+    index, table: str, column: str
+) -> Iterator[ColumnUseRow]:
+    """Convert resolved declarative writes to ColumnUseRow (write side only)."""
+    from tools.ast_dataflow_py.declarative_writes import iter_declarative_writes
+
+    for use in iter_declarative_writes(index, table=table, column=column):
+        yield ColumnUseRow(
+            file=use.file,
+            line=use.line,
+            column=use.column,
+            confidence=use.confidence,
+            method=use.method,
+            columnPath=use.columnPath,
+            table=use.table,
+            enclosing=use.enclosing,
+            source="declarative",
+        )
 
 
 def scan_python_source(
@@ -324,8 +399,21 @@ def scan_python_source(
     table: str,
     column: str,
     kind: QueryKind,
+    include_declarative: bool = True,
 ) -> Iterator[ColumnUseRow]:
-    """Scan one Python file's source for column uses of table.column."""
+    """Scan one Python file's source for column uses of table.column.
+
+    ``include_declarative=False`` skips the single-file declarative pass —
+    ``scan_tree`` sets it so declarative resolution can run CORPUS-level
+    instead (a mount in one file may feed declare_row sites in another).
+    """
+    if include_declarative and kind == "column-writes":
+        from tools.ast_dataflow_py.declarative_writes import collect_source
+
+        index = collect_source(source, rel_path)
+        if index is not None:
+            yield from _declarative_rows(index, table, column)
+
     try:
         tree = ast.parse(source)
     except SyntaxError:
@@ -333,6 +421,7 @@ def scan_python_source(
 
     tracker = _EnclosingTracker()
     tracker.visit(tree)
+    module_consts = collect_module_str_consts(tree)
 
     # Fluent-chain dedupe: ast.walk visits every sub-call of a chain
     # (`.execute()`, `.eq()`, `.update()`, `.from_()` are four Call nodes).
@@ -357,7 +446,7 @@ def scan_python_source(
             and node.func.attr in SQL_EXEC_METHODS
             and node.args
         ):
-            literal = _extract_sql_literal(node.args[0])
+            literal = _extract_sql_literal(node.args[0], module_consts)
             if literal is not None:
                 for verb, confidence in _classify_sql(
                     literal.text, table, column, literal.dynamic
@@ -521,15 +610,10 @@ def is_test_path(rel_path: str) -> bool:
     )
 
 
-def scan_tree(
-    root: Path,
-    scan_dirs: list[str],
-    table: str,
-    column: str,
-    kind: QueryKind,
-    exclude_tests: bool = False,
-) -> Iterator[ColumnUseRow]:
-    """Scan all .py files under root/<scan_dirs> for column uses."""
+def iter_corpus_files(
+    root: Path, scan_dirs: list[str], exclude_tests: bool = False
+) -> Iterator[tuple[str, str]]:
+    """(rel_path, source) for every readable .py file under the scan dirs."""
     for scan_dir in scan_dirs:
         base = root / scan_dir
         if not base.exists():
@@ -539,7 +623,39 @@ def scan_tree(
             if exclude_tests and is_test_path(rel):
                 continue
             try:
-                source = path.read_text(encoding="utf-8")
+                yield (rel, path.read_text(encoding="utf-8"))
             except (OSError, UnicodeDecodeError):
                 continue
-            yield from scan_python_source(source, rel, table, column, kind)
+
+
+def scan_tree(
+    root: Path,
+    scan_dirs: list[str],
+    table: str,
+    column: str,
+    kind: QueryKind,
+    exclude_tests: bool = False,
+) -> Iterator[ColumnUseRow]:
+    """Scan all .py files under root/<scan_dirs> for column uses.
+
+    SQL and supabase-py detection is per-file; declarative (TableSchema /
+    mount_table_target / declare_row) resolution runs over the WHOLE corpus
+    afterwards, so cross-file target travel resolves.
+    """
+    from tools.ast_dataflow_py.declarative_writes import (
+        DeclarativeIndex,
+        collect_source,
+    )
+
+    corpus_index = DeclarativeIndex()
+    for rel, source in iter_corpus_files(root, scan_dirs, exclude_tests):
+        yield from scan_python_source(
+            source, rel, table, column, kind, include_declarative=False
+        )
+        if kind == "column-writes":
+            file_index = collect_source(source, rel)
+            if file_index is not None:
+                corpus_index.extend(file_index)
+
+    if kind == "column-writes":
+        yield from _declarative_rows(corpus_index, table, column)

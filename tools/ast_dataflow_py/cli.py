@@ -10,6 +10,14 @@ with one mental model:
 Output: one QueryResponse JSON object on stdout —
 {query, args, results[], truncated, totalEstimated?, durationMs, sqlglot}.
 Exit 0 on success (including structured errors); exit 2 on malformed args.
+
+`schema-uses` is the bulk sweep (no --table/--column): ONE corpus walk
+emitting every attributable evidence row as the v1 evidence-sidecar
+envelope — feed its output to the TS side via
+`bun run ast-dataflow schema-coverage --evidence <file>`:
+
+    python3 tools/ast_dataflow_py/cli.py schema-uses \
+        [--exclude-tests] [--pretty] > .schema-uses.json
 """
 
 from __future__ import annotations
@@ -41,11 +49,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ast-dataflow-py")
     parser.add_argument(
         "query",
-        choices=["column-reads", "column-writes"],
+        choices=["column-reads", "column-writes", "schema-uses"],
         help="Query to run over the Python corpus",
     )
-    parser.add_argument("--table", required=True)
-    parser.add_argument("--column", required=True)
+    parser.add_argument("--table")
+    parser.add_argument("--column")
     parser.add_argument("--limit", type=int, default=DEFAULT_LIMIT)
     parser.add_argument("--exclude-tests", action="store_true")
     parser.add_argument("--pretty", action="store_true")
@@ -68,13 +76,32 @@ def main(argv: list[str] | None = None) -> int:
             file=sys.stderr,
         )
         return 2
-    if not args.table.strip() or not args.column.strip():
-        print("--table and --column must be non-empty.", file=sys.stderr)
-        return 2
 
     started = time.monotonic()
     root = Path(args.root).resolve()
     scan_dirs = args.scan_dirs or DEFAULT_SCAN_DIRS
+
+    if args.query == "schema-uses":
+        if args.table or args.column:
+            print("schema-uses takes no --table/--column.", file=sys.stderr)
+            return 2
+        from tools.ast_dataflow_py.schema_uses import (  # noqa: E402
+            build_sidecar,
+            scan_schema_uses,
+        )
+
+        sweep_rows, caveats = scan_schema_uses(
+            root, scan_dirs, exclude_tests=args.exclude_tests
+        )
+        sidecar = build_sidecar(
+            sweep_rows, caveats, int((time.monotonic() - started) * 1000)
+        )
+        print(json.dumps(sidecar, indent=2 if args.pretty else None))
+        return 0
+
+    if not args.table or not args.table.strip() or not args.column or not args.column.strip():
+        print("--table and --column are required and must be non-empty.", file=sys.stderr)
+        return 2
 
     rows = []
     total = 0
