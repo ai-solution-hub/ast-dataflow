@@ -12,6 +12,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from tools.ast_dataflow_py.cli import main as cli_main
 from tools.ast_dataflow_py.column_uses import scan_python_source
 from tools.ast_dataflow_py.declarative_writes import (
@@ -234,42 +236,49 @@ class TestColumnWritesIntegration:
         assert rows == []
 
 
-class TestRealCorpus:
-    """Pin the detector against the repo's actual primary write surface.
+# The canonical-repo corpus pins that used to live here (TestRealCorpus
+# flow.py mount topology; the l_records const-SQL visibility sweep) moved to
+# the consuming repo when this tool was extracted — they assert THAT repo's
+# pipeline write surface, not this tool's contract, and they need its source
+# tree as a corpus.
 
-    These assert the flow.py contract this tool exists to see; if flow.py's
-    write topology changes, these SHOULD fail and be updated deliberately.
-    """
 
-    def test_flow_py_mounts_resolve_completely(self):
-        source = (REPO_ROOT / "scripts/cocoindex_pipeline/flow.py").read_text()
-        index = collect_source(source, "scripts/cocoindex_pipeline/flow.py")
-        assert index is not None
-        mounted = {m.table for m in index.mounts if m.table}
-        assert mounted == {
-            "q_a_extractions",
-            "source_documents",
-            "entity_mentions",
-            "entity_relationships",
-            "content_chunks",
-            "reference_items",
-            "record_embeddings",
-        }
-        uses, unresolved = resolve_uses(index)
-        assert unresolved == []
-        # The entity_relationships dedup-map payload (row=row) must be
-        # recovered via the scope-dict fallback.
-        er = {
-            u.columnPath
-            for u in uses
-            if u.table == "entity_relationships" and u.method == "declare_row"
-        }
-        assert "source_entity" in er and "target_entity" in er
+def _write_synthetic_corpus(root: Path) -> None:
+    """A minimal corpus exercising all three sweep sources plus an rpc site."""
+    pkg = root / "pkg"
+    pkg.mkdir()
+    (pkg / "writes.py").write_text(
+        "SCHEMA = TableSchema(\n"
+        "    columns={\n"
+        '        "id": ColumnDef(type="uuid", nullable=False),\n'
+        '        "name": ColumnDef(type="text", nullable=False),\n'
+        "    },\n"
+        '    primary_key=("id",),\n'
+        ")\n"
+        "\n"
+        "async def mount(ctx):\n"
+        '    return await mount_table_target(ctx, "widgets", SCHEMA)\n'
+        "\n"
+        "def write(target):\n"
+        '    target.declare_row(row={"id": make_id(), "name": "x"})\n'
+        "\n"
+        "async def read(conn):\n"
+        "    return await conn.fetch(\n"
+        '        "SELECT id, name FROM gadgets WHERE name = $1", "x"\n'
+        "    )\n"
+        "\n"
+        "def update(client):\n"
+        '    client.from_("widgets").update({"name": "y"}).eq("id", 1).execute()\n'
+        "\n"
+        "def call_rpc(client):\n"
+        '    client.rpc("do_thing", {"payload_key": 1}).execute()\n'
+    )
 
 
 class TestSchemaUsesSweep:
-    def test_sidecar_envelope_shape(self):
-        rows, caveats = scan_schema_uses(REPO_ROOT, ["scripts"], exclude_tests=True)
+    def test_sidecar_envelope_shape(self, tmp_path):
+        _write_synthetic_corpus(tmp_path)
+        rows, caveats = scan_schema_uses(tmp_path, ["pkg"])
         sidecar = build_sidecar(rows, caveats, duration_ms=1)
         assert sidecar["schemaVersion"] == 1
         assert sidecar["source"] == "ast-dataflow-py"
@@ -286,26 +295,16 @@ class TestSchemaUsesSweep:
             "source",
         }
 
-    def test_sweep_covers_all_three_sources(self):
-        rows, _ = scan_schema_uses(REPO_ROOT, ["scripts"], exclude_tests=True)
+    def test_sweep_covers_all_three_sources(self, tmp_path):
+        pytest.importorskip("sqlglot")
+        _write_synthetic_corpus(tmp_path)
+        rows, _ = scan_schema_uses(tmp_path, ["pkg"])
         assert {r.source for r in rows} == {"sql", "supabase-py", "declarative"}
 
-    def test_rpc_payloads_are_skipped_loudly(self):
-        _, caveats = scan_schema_uses(REPO_ROOT, ["scripts"], exclude_tests=True)
+    def test_rpc_payloads_are_skipped_loudly(self, tmp_path):
+        _write_synthetic_corpus(tmp_path)
+        _, caveats = scan_schema_uses(tmp_path, ["pkg"])
         assert caveats.rpc_payload_sites_skipped >= 1
-
-    def test_l_records_const_sql_reads_are_visible(self):
-        # The l_records read layer passes ALL its SQL as module constants —
-        # invisible before the const-resolution hop.
-        rows, caveats = scan_schema_uses(REPO_ROOT, ["scripts"], exclude_tests=True)
-        lrec = [
-            r
-            for r in rows
-            if r.file == "scripts/cocoindex_pipeline/sources/l_records.py"
-        ]
-        assert {r.table for r in lrec} >= {"source_documents", "q_a_pairs"}
-        # The conditional tuple-assign sites stay dynamic — caveated, small.
-        assert caveats.sql_sites_unresolved_dynamic <= 5
 
     def test_stored_proc_from_source_never_emits_empty_table(self, tmp_path):
         # Live-caught defect (S510): `SELECT ... FROM public.some_proc(...)`
