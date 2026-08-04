@@ -1,5 +1,7 @@
 import type { Project } from 'ts-morph';
 import { buildEnvelope } from './caveats';
+import { checkArgPaths } from './path-policy';
+import type { PathPolicy } from './path-policy';
 import { callees } from './queries/callees';
 import { callers } from './queries/callers';
 import { columnReads } from './queries/column-reads';
@@ -240,13 +242,43 @@ function attachEnvelope<Q extends QueryName>(
  * parsed (the CLI keeps its flag parsing; the MCP server passes the tool
  * call's `args` object straight through) — dispatch owns the
  * query-name → query-function mapping and the shared response envelope.
+ *
+ * `policy`, when supplied, confines the caller-supplied filesystem paths in
+ * `args` (issue #1). This is the seam because it is the one choke point both
+ * surfaces already share, so the confinement cannot be bypassed by a query
+ * that forgets to ask for it, and a surface opts in by passing a policy
+ * rather than by remembering to call a checker. The CLI passes nothing and
+ * stays permissive; the MCP server passes its allowlist.
  */
 export async function dispatch<Q extends QueryName>(
   query: Q,
   args: QueryArgMap[Q],
   project: Project,
   repoRoot: string,
+  policy?: PathPolicy,
 ): Promise<QueryResponseMap[Q]> {
+  const started = Date.now();
+
+  // Before dispatchInner, and therefore before any query opens a file: the
+  // rejection must not depend on what is on disk.
+  const violation = checkArgPaths(
+    query,
+    args as Record<string, unknown>,
+    repoRoot,
+    policy,
+  );
+  if (violation) {
+    const rejected = {
+      query,
+      args: { ...args },
+      results: [],
+      truncated: false,
+      durationMs: Date.now() - started,
+      error: violation,
+    } as unknown as QueryResponseMap[Q];
+    return attachEnvelope(query, rejected, project, repoRoot);
+  }
+
   const response = (await dispatchInner(
     query,
     args,

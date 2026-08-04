@@ -4,6 +4,7 @@ import type { Project } from 'ts-morph';
 import { dispatch } from './dispatch';
 import type { QueryArgMap, QueryName, QueryResponseMap } from './dispatch';
 import { createProject } from './index';
+import type { PathPolicy } from './path-policy';
 import { toRepoRelative } from './resolve';
 
 export interface FileStamp {
@@ -21,6 +22,12 @@ export interface WarmState {
   repoRoot: string;
   tsConfigFilePath: string;
   known: Map<string, FileStamp>;
+  /**
+   * Path confinement for caller-supplied fs paths (issue #1). Held on the
+   * warm state rather than passed per call so the surface commits to it once,
+   * at server start, and no future tool handler can dispatch without it.
+   */
+  pathPolicy?: PathPolicy;
 }
 
 /**
@@ -37,6 +44,7 @@ export interface StalenessMeta {
 export function createWarmState(opts: {
   repoRoot: string;
   tsConfigFilePath?: string;
+  pathPolicy?: PathPolicy;
 }): WarmState {
   const tsConfigFilePath =
     opts.tsConfigFilePath ?? resolve(opts.repoRoot, 'tsconfig.json');
@@ -55,7 +63,13 @@ export function createWarmState(opts: {
       // handles it (forget on missing, stale-loud on refresh failure).
     }
   }
-  return { project, repoRoot: opts.repoRoot, tsConfigFilePath, known };
+  return {
+    project,
+    repoRoot: opts.repoRoot,
+    tsConfigFilePath,
+    known,
+    ...(opts.pathPolicy ? { pathPolicy: opts.pathPolicy } : {}),
+  };
 }
 
 /**
@@ -129,7 +143,13 @@ export async function warmDispatch<Q extends QueryName>(
   args: QueryArgMap[Q],
 ): Promise<WarmResponse<Q>> {
   const meta = sweepStaleness(state);
-  const response = await dispatch(query, args, state.project, state.repoRoot);
+  const response = await dispatch(
+    query,
+    args,
+    state.project,
+    state.repoRoot,
+    state.pathPolicy,
+  );
   return { ...response, meta };
 }
 
