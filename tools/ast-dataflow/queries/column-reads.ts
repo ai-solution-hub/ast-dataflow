@@ -149,7 +149,7 @@ export async function columnReads(
       { ...args },
       'parse_error',
       'table must be a non-empty string.',
-      "Example: { table: 'bid_questions', column: 'project_id' }",
+      "Example: { table: 'survey_questions', column: 'project_id' }",
       Date.now() - started,
     );
   }
@@ -160,7 +160,7 @@ export async function columnReads(
       { ...args },
       'parse_error',
       'column must be a non-empty string.',
-      "Example: { table: 'bid_questions', column: 'project_id' }",
+      "Example: { table: 'survey_questions', column: 'project_id' }",
       Date.now() - started,
     );
   }

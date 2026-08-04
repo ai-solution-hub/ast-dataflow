@@ -83,7 +83,7 @@ describe('envelope — a zero-row answer says why it might be zero (G2)', () => 
     const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
     const response = await dispatch(
       'column-reads',
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );

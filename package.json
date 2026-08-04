@@ -2,7 +2,7 @@
   "name": "@ai-solution-hub/ast-dataflow",
   "version": "0.1.0",
   "description": "Type-checker-resolved symbol and dataflow analysis for TypeScript repos, with a Python column-lineage companion, a CLI, and an MCP server. Built for precise file-and-line answers: callers, callees, column reads/writes, string-literal AST context, re-export chains, schema coverage.",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/ai-solution-hub/ast-dataflow.git"
@@ -22,15 +22,19 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:py": "python3 -m pytest scripts/tests/",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "tinyglobby": "^0.2.17",
     "ts-morph": "^28.0.0",
     "yaml": "^2.9.0"
   },
   "devDependencies": {
     "@types/node": "^25",
+    "prettier": "^3.9.6",
     "typescript": "^5",
     "vitest": "^4.1.6"
   }

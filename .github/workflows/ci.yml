@@ -6,6 +6,17 @@ on:
   pull_request:
 
 jobs:
+  lint:
+    name: Format (prettier)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - run: bun run format:check
+
   ts:
     name: TypeScript (typecheck + vitest)
     runs-on: ubuntu-latest

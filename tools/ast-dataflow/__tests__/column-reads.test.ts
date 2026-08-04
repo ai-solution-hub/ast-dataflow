@@ -15,7 +15,7 @@ describe('column-reads query — typed client', () => {
   it('finds .select() hit with project_id in column list', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -29,7 +29,7 @@ describe('column-reads query — typed client', () => {
     expect(selectHits[0]).toMatchObject({
       isTyped: true,
       confidence: 'exact',
-      table: 'bid_questions',
+      table: 'survey_questions',
       columnPath: 'project_id',
       method: 'select',
       line: 20,
@@ -39,7 +39,7 @@ describe('column-reads query — typed client', () => {
   it('finds .eq() hit with project_id as column argument', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -52,7 +52,7 @@ describe('column-reads query — typed client', () => {
     expect(eqHits[0]).toMatchObject({
       isTyped: true,
       confidence: 'exact',
-      table: 'bid_questions',
+      table: 'survey_questions',
       columnPath: 'project_id',
       method: 'eq',
       line: 25,
@@ -64,7 +64,7 @@ describe('column-reads query — untyped client', () => {
   it('finds .select() hit with confidence=indirect and isTyped=false', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -77,7 +77,7 @@ describe('column-reads query — untyped client', () => {
     expect(selectHits[0]).toMatchObject({
       isTyped: false,
       confidence: 'indirect',
-      table: 'bid_questions',
+      table: 'survey_questions',
       columnPath: 'project_id',
       method: 'select',
       line: 10,
@@ -87,7 +87,7 @@ describe('column-reads query — untyped client', () => {
   it('finds .eq() hit with confidence=indirect and isTyped=false', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -100,7 +100,7 @@ describe('column-reads query — untyped client', () => {
     expect(eqHits[0]).toMatchObject({
       isTyped: false,
       confidence: 'indirect',
-      table: 'bid_questions',
+      table: 'survey_questions',
       columnPath: 'project_id',
       method: 'eq',
       line: 15,
@@ -112,7 +112,7 @@ describe('column-reads query — typed-detection guards', () => {
   it('reports a hand-rolled structural builder as isTyped=false / indirect', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -129,7 +129,7 @@ describe('column-reads query — typed-detection guards', () => {
       expect(hit).toMatchObject({
         isTyped: false,
         confidence: 'indirect',
-        table: 'bid_questions',
+        table: 'survey_questions',
         columnPath: 'project_id',
         line: 27,
       });
@@ -139,7 +139,7 @@ describe('column-reads query — typed-detection guards', () => {
   it('reports a bare SupabaseClient parameter as isTyped=false / indirect', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -156,7 +156,7 @@ describe('column-reads query — typed-detection guards', () => {
       expect(hit).toMatchObject({
         isTyped: false,
         confidence: 'indirect',
-        table: 'bid_questions',
+        table: 'survey_questions',
         columnPath: 'project_id',
       });
     }
@@ -165,7 +165,7 @@ describe('column-reads query — typed-detection guards', () => {
   it('resolves a SupabaseClient<Database> parameter to isTyped=true / exact across the function boundary', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -181,7 +181,7 @@ describe('column-reads query — typed-detection guards', () => {
       expect(hit).toMatchObject({
         isTyped: true,
         confidence: 'exact',
-        table: 'bid_questions',
+        table: 'survey_questions',
         columnPath: 'project_id',
       });
     }
@@ -190,7 +190,7 @@ describe('column-reads query — typed-detection guards', () => {
   it('keeps the untyped stub client indirect despite the table-name echo in its builder generics', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -210,7 +210,7 @@ describe('column-reads query — match object', () => {
   it('finds .match({ project_id: value }) longhand hit with method=match', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -233,7 +233,7 @@ describe('column-reads query — match object', () => {
   it('finds .match({ project_id }) shorthand hit with method=match', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -254,7 +254,7 @@ describe('column-reads query — match object', () => {
   it('matches Supabase colon-alias select(pid:project_id) as a project_id read', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -276,13 +276,13 @@ describe('column-reads query — .from(CONST) table-name resolution', () => {
   it('resolves a literal-typed const table argument to exact rows', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
 
-    // const-table-read.ts line 35: .from(BID_QUESTIONS_TABLE) chain — the
-    // const's type is the string-literal 'bid_questions'.
+    // const-table-read.ts line 35: .from(SURVEY_QUESTIONS_TABLE) chain — the
+    // const's type is the string-literal 'survey_questions'.
     const hits = response.results.filter(
       (r) => r.file === 'const-table-read.ts' && r.line === 35,
     );
@@ -292,7 +292,7 @@ describe('column-reads query — .from(CONST) table-name resolution', () => {
       expect(hit).toMatchObject({
         isTyped: true,
         confidence: 'exact',
-        table: 'bid_questions',
+        table: 'survey_questions',
         columnPath: 'project_id',
       });
     }
@@ -301,13 +301,13 @@ describe('column-reads query — .from(CONST) table-name resolution', () => {
   it('resolves an as-const map property table argument to an exact row', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
 
-    // const-table-read.ts line 44: .from(TABLES.bid_questions) chain — the
-    // `as const` map property's type is the string-literal 'bid_questions'.
+    // const-table-read.ts line 44: .from(TABLES.survey_questions) chain — the
+    // `as const` map property's type is the string-literal 'survey_questions'.
     const hits = response.results.filter(
       (r) => r.file === 'const-table-read.ts' && r.line === 44,
     );
@@ -315,7 +315,7 @@ describe('column-reads query — .from(CONST) table-name resolution', () => {
     expect(hits[0]).toMatchObject({
       isTyped: true,
       confidence: 'exact',
-      table: 'bid_questions',
+      table: 'survey_questions',
       columnPath: 'project_id',
       method: 'select',
     });
@@ -324,7 +324,7 @@ describe('column-reads query — .from(CONST) table-name resolution', () => {
   it('excludes widened-string and union-of-literals table arguments as unattributable', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -342,7 +342,7 @@ describe('column-reads query — false-positive guard', () => {
   it('suppresses hits from noise.ts (wrong table, wrong column, bare string)', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -356,7 +356,7 @@ describe('column-reads query — excludeTests filter', () => {
   it('returns results when excludeTests is false (default)', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id', excludeTests: false },
+      { table: 'survey_questions', column: 'project_id', excludeTests: false },
       project,
       repoRoot,
     );
@@ -380,29 +380,29 @@ describe('column-reads query — excludeTests filter', () => {
     const { project, repoRoot } = makeProject();
     // Inject a synthetic source file under a __tests__/ subpath of the
     // fixture project. The file uses the typed Supabase stub from the
-    // fixture and contains a .select('project_id') call against bid_questions.
+    // fixture and contains a .select('project_id') call against survey_questions.
     project.createSourceFile(
       resolve(FIXTURE_DIR, '__tests__', 'synthetic-test-file.ts'),
       `
 import { createClient } from '../supabase-stub.js';
 type Database = {
-  public: { Tables: { bid_questions: { Row: { project_id: string } } } };
+  public: { Tables: { survey_questions: { Row: { project_id: string } } } };
 };
 const sb = createClient<Database>('', '');
 export function readProjectId() {
-  return sb.from('bid_questions').select('project_id').eq('project_id', 'x');
+  return sb.from('survey_questions').select('project_id').eq('project_id', 'x');
 }
 `,
       { overwrite: true },
     );
 
     const without = await columnReads(
-      { table: 'bid_questions', column: 'project_id', excludeTests: false },
+      { table: 'survey_questions', column: 'project_id', excludeTests: false },
       project,
       repoRoot,
     );
     const withFlag = await columnReads(
-      { table: 'bid_questions', column: 'project_id', excludeTests: true },
+      { table: 'survey_questions', column: 'project_id', excludeTests: true },
       project,
       repoRoot,
     );
@@ -435,7 +435,7 @@ describe('column-reads query — structured error', () => {
   it('returns parse_error when column is empty', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: '' },
+      { table: 'survey_questions', column: '' },
       project,
       repoRoot,
     );
@@ -448,7 +448,7 @@ describe('column-reads query — wildcard select', () => {
   it('detects .select("*") as a wildcard row with confidence="wildcard" and columnPath="*"', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -460,7 +460,7 @@ describe('column-reads query — wildcard select', () => {
     expect(wildcardHits[0]).toMatchObject({
       confidence: 'wildcard',
       columnPath: '*',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
     });
   });
@@ -468,7 +468,7 @@ describe('column-reads query — wildcard select', () => {
   it('does not emit wildcard rows for files with only explicit column selects', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -485,19 +485,19 @@ describe('column-reads query — metadata', () => {
   it('echoes table in every result row', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
     for (const row of response.results) {
-      expect(row.table).toBe('bid_questions');
+      expect(row.table).toBe('survey_questions');
     }
   });
 
   it('records durationMs', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );

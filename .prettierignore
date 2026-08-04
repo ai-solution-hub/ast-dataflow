@@ -1,0 +1,5 @@
+# Fixtures are analysis inputs, not source. The queries under test report
+# file:line and the suite asserts those positions, so reformatting a fixture
+# moves the answer it exists to pin. One fixture is also invalid JSON on
+# purpose, which the formatter cannot parse at all.
+tools/ast-dataflow/__tests__/fixtures/

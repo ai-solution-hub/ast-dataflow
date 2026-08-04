@@ -101,8 +101,7 @@ function resolveOneHopObjectLiteral(
  * prevent ruling the column out and downgrade to `indirect`.
  */
 export type WriteArgResult =
-  | { found: false }
-  | { found: true; confidence: 'exact' | 'indirect' };
+  { found: false } | { found: true; confidence: 'exact' | 'indirect' };
 
 export function inspectWriteArg(
   argNode: Node,
@@ -186,7 +185,7 @@ export async function columnWrites(
       { ...args },
       'parse_error',
       'table must be a non-empty string.',
-      "Example: { table: 'bid_questions', column: 'project_id' }",
+      "Example: { table: 'survey_questions', column: 'project_id' }",
       Date.now() - started,
     );
   }
@@ -197,7 +196,7 @@ export async function columnWrites(
       { ...args },
       'parse_error',
       'column must be a non-empty string.',
-      "Example: { table: 'bid_questions', column: 'project_id' }",
+      "Example: { table: 'survey_questions', column: 'project_id' }",
       Date.now() - started,
     );
   }

@@ -1,14 +1,14 @@
 // Fixture: false-positive guard.
-// Neither call should appear in column-reads for table='bid_questions', column='project_id':
+// Neither call should appear in column-reads for table='survey_questions', column='project_id':
 //   1. .from('other_table').select('project_id') — wrong table, suppress.
-//   2. .from('bid_questions').select('other_column') — wrong column, suppress.
+//   2. .from('survey_questions').select('other_column') — wrong column, suppress.
 //   3. Bare string 'project_id' in a variable — not a Supabase chain, suppress.
 import { createClient } from './supabase-stub.js';
 
 type Database = {
   public: {
     Tables: {
-      bid_questions: { Row: { project_id: string; other_column: string } };
+      survey_questions: { Row: { project_id: string; other_column: string } };
       other_table: { Row: { project_id: string } };
     };
   };
@@ -24,7 +24,7 @@ async function wrongTable() {
 
 // Wrong column — should NOT be returned.
 async function wrongColumn() {
-  const result = await sb.from('bid_questions').select('other_column').single();
+  const result = await sb.from('survey_questions').select('other_column').single();
   return result;
 }
 
