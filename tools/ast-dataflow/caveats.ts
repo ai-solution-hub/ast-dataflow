@@ -38,9 +38,27 @@ interface FilterHint {
   effect: string;
 }
 
+/**
+ * How this query drops rows when it hits the cap. Required, not defaulted:
+ * the three mechanisms give the caller genuinely different information about
+ * what is missing, and a wrong description is worse than none.
+ *
+ * - spatial        — truncateSpatial: distinct files first, heavily-hit files
+ *                    thinned last. `totalEstimated` is the true total.
+ * - ordered-prefix — the walk STOPS at the cap (flow-trace, reexport-chain),
+ *                    so the rows are a prefix of the traversal and
+ *                    `totalEstimated` is a LOWER BOUND, not a total.
+ * - ranked-cap     — rows are sorted by severity, then sliced, so what you
+ *                    have is the worst of the set and `totalEstimated` is the
+ *                    true total.
+ */
+type TruncationMode = 'spatial' | 'ordered-prefix' | 'ranked-cap';
+
 export interface CaveatSpec {
   /** What evidence this answer rests on, in one sentence. */
   scan: string;
+  /** How rows are dropped at the cap — governs the narrowing text. */
+  truncation: TruncationMode;
   /** The AST shapes / node kinds the query matches on. */
   searched: string[];
   /** Surfaces the scan structurally cannot see, whatever the row count. */
@@ -90,6 +108,7 @@ const SUPABASE_BLIND = [
 
 export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
   callers: {
+    truncation: 'spatial',
     scan: 'Call sites are type-checker references to the resolved declaration that sit in callee position; nothing is matched by name.',
     searched: [
       'CallExpression whose callee resolves to the symbol',
@@ -106,6 +125,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'resolution',
   },
   callees: {
+    truncation: 'spatial',
     scan: "Calls made inside the resolved symbol's own body, resolved through the type checker to their declarations.",
     searched: [
       'CallExpression / NewExpression / super() / this.method() inside the body',
@@ -129,6 +149,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'callKind',
   },
   importers: {
+    truncation: 'spatial',
     scan: 'Import and re-export declarations whose module specifier resolves to the target module file.',
     searched: [
       'ImportDeclaration (named, default, namespace, type-only)',
@@ -144,6 +165,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'importStyle',
   },
   references: {
+    truncation: 'spatial',
     scan: 'Every type-checker reference to the resolved declaration, classified by syntactic position.',
     searched: [
       'value reads and writes',
@@ -170,6 +192,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'column-reads': {
+    truncation: 'spatial',
     scan: "Read and filter sites on Supabase query chains rooted at `.from('<table>')`, plus `.rpc()` payload keys. No SQL is parsed.",
     searched: [
       ".select('…') column lists, including colon aliases and nested relation blocks",
@@ -185,6 +208,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     schemaAddressed: true,
   },
   'column-writes': {
+    truncation: 'spatial',
     scan: "Mutation payloads on Supabase query chains rooted at `.from('<table>')`. No SQL is parsed.",
     searched: [
       '.insert(obj | obj[]) payload keys',
@@ -203,6 +227,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     schemaAddressed: true,
   },
   'type-evolution': {
+    truncation: 'spatial',
     scan: 'Sites where the named property of the named type is referenced, in both type and value position.',
     searched: [
       'parameter and variable type annotations',
@@ -230,6 +255,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'dead-exports': {
+    truncation: 'spatial',
     scan: 'Exported declarations with zero non-self importers, counted through the type checker plus one hop of barrel re-export.',
     searched: [
       'named, default, and `export … from` declarations',
@@ -255,6 +281,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'exportKind',
   },
   'reexport-chain': {
+    truncation: 'ordered-prefix',
     scan: 'The declaration site, every barrel that re-exports the symbol, and the consumers that import it.',
     searched: [
       'the original declaration',
@@ -279,6 +306,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'enum-uses': {
+    truncation: 'spatial',
     scan: 'Declaration, member-access, and type-position sites of the named TypeScript enum.',
     searched: [
       'the enum declaration and its member declarations',
@@ -303,6 +331,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'string-literal-uses': {
+    truncation: 'spatial',
     scan: 'Exact string-literal occurrences of the value, classified by call-site context.',
     searched: [
       'vi.mock() first arguments',
@@ -321,6 +350,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'fixture-uses': {
+    truncation: 'spatial',
     scan: 'Heuristic text search over JSON, YAML front-matter, and TypeScript data files — every row is indirect confidence by construction.',
     searched: [
       'JSON object keys and string values',
@@ -346,6 +376,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'flow-trace': {
+    truncation: 'ordered-prefix',
     scan: 'A depth-first walk of value flow from one origin declaration; rows are ordered hops, not a coverage set.',
     searched: [
       'assignment, destructuring, argument, return, spread, and mutation hops',
@@ -377,6 +408,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'kind',
   },
   'type-drift-detect': {
+    truncation: 'spatial',
     scan: 'Response-shaped interfaces joined to the fetcher generics and route return annotations that should agree on them.',
     searched: [
       'interface and type-alias declarations matching the response-name patterns',
@@ -402,6 +434,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
     bucketKey: 'classification',
   },
   'schema-coverage': {
+    truncation: 'ranked-cap',
     scan: 'Per-column wiring verdicts from TypeScript query-chain evidence. (This query builds its own richer caveats; the shared block only supplies corpus and shape context.)',
     searched: [
       "every `.from()` chain in scope, joined to Database['public']['Tables']",
@@ -470,6 +503,25 @@ export function bucketHistogram(
   return counts;
 }
 
+/**
+ * What was dropped, per mechanism. The distinction is not pedantry: under
+ * `spatial` the file list is near-complete and the total is exact, while under
+ * `ordered-prefix` the walk stopped early — so the total is a floor and whole
+ * branches were never visited. Describing the second as the first would tell
+ * a caller their answer is more complete than it is.
+ */
+const MECHANISM: Record<
+  TruncationMode,
+  (shown: number, total: number) => string
+> = {
+  spatial: (shown, total) =>
+    `Showing ${shown} of ${total} rows. Rows are dropped by spatial-coverage truncation: distinct files are kept first, and the extra hits of heavily-hit files are thinned last — so the file LIST is close to complete while per-file depth is not.`,
+  'ordered-prefix': (shown, total) =>
+    `Showing ${shown} rows, and the walk STOPPED at the cap — ${total} is a lower bound, not a total. What you have is a prefix of the traversal: later branches were never explored, so their absence is not evidence.`,
+  'ranked-cap': (shown, total) =>
+    `Showing ${shown} of ${total} rows, ranked worst-first — you have the most severe rows, and the remainder are lower-priority rows of the same set.`,
+};
+
 /** Render one filter as a line a caller can act on directly. */
 function renderFilter(hint: FilterHint, applied: boolean): string {
   const cli = hint.value ? `${hint.flag} ${hint.value}` : hint.flag;
@@ -491,7 +543,7 @@ export function narrowingFor(
   const total = totalEstimated ?? shown;
   const limit = typeof args.limit === 'number' ? args.limit : shown;
   const lines = [
-    `Showing ${shown} of ${total} rows. Rows are dropped by spatial-coverage truncation: distinct files are kept first, and the extra hits of heavily-hit files are thinned last — so the file LIST is close to complete while per-file depth is not.`,
+    MECHANISM[spec.truncation](shown, total),
     'Narrow with any of:',
   ];
   for (const hint of spec.filters) {
@@ -501,8 +553,12 @@ export function narrowingFor(
   // Suggest the cap that would show everything, unless that is absurdly large
   // for a terminal — then suggest a step up instead of a number nobody runs.
   const suggested = Math.min(total, Math.max(limit * 5, 1000));
+  const matched =
+    spec.truncation === 'ordered-prefix'
+      ? `at least ${total} rows matched`
+      : `${total} rows matched`;
   lines.push(
-    `  --limit ${suggested}  (arg: limit) — raise the cap; it is currently ${limit} and ${total} rows matched.`,
+    `  --limit ${suggested}  (arg: limit) — raise the cap; it is currently ${limit} and ${matched}.`,
   );
   return lines;
 }

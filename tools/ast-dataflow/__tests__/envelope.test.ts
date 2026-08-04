@@ -181,6 +181,28 @@ describe('envelope — truncation offers a narrowing path (G10)', () => {
     expect(response.caveats?.summaryBasis).toBe('shown-rows');
   });
 
+  it('describes the truncation mechanism each query really uses', async () => {
+    // Not pedantry: under spatial truncation the file list is near-complete
+    // and the total is exact, while reexport-chain STOPS the walk at the cap,
+    // so its total is a floor and whole branches went unvisited. Calling the
+    // second one spatial would overstate how complete the answer is.
+    const fixture = resolve(__dirname, 'fixtures', '10-reexport-chain');
+    const { project, repoRoot } = projectAt(fixture);
+    const response = await dispatch(
+      'reexport-chain',
+      { symbol: 'twoHopSymbol', from: 'two-hop-source.ts', limit: 3 },
+      project,
+      repoRoot,
+    );
+
+    expect(response.truncated).toBe(true);
+    const text = (response.caveats?.narrowing ?? []).join('\n');
+    expect(text).toContain('the walk STOPPED at the cap');
+    expect(text).toContain('is a lower bound, not a total');
+    expect(text).toContain('at least');
+    expect(text).not.toContain('spatial-coverage truncation');
+  });
+
   it('only advertises filters the query actually honours', () => {
     // A narrowing hint for an inert flag is worse than no hint: it sends the
     // caller to re-run a query that returns exactly the same rows.
