@@ -19,6 +19,7 @@ import {
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { QUERY_NAMES, REQUIRED_ARGS } from './dispatch';
 import type { QueryArgMap, QueryName } from './dispatch';
+import { mcpPathPolicy } from './path-policy';
 import {
   createSerialQueue,
   createWarmState,
@@ -29,12 +30,25 @@ import type { WarmState } from './staleness';
 
 const repoRoot = process.cwd();
 
+/**
+ * Caller-supplied file paths are confined to the repo root on this surface
+ * (issue #1): the caller is a model, not the operator holding the shell. An
+ * operator who needs the server to read a sidecar written elsewhere — the
+ * census writes to $TMPDIR/canonical-census — opts in by spawning the server
+ * with AST_DATAFLOW_ALLOWED_ROOTS set. Fixed at spawn, so no request can
+ * widen it. The CLI is unconfined and remains the unrestricted path.
+ */
+const pathPolicy = mcpPathPolicy(
+  repoRoot,
+  process.env.AST_DATAFLOW_ALLOWED_ROOTS,
+);
+
 /** Built lazily on the first tool call — construction costs ~5 s on the full
  *  corpus and the server must come up fast enough for the MCP handshake. */
 let state: WarmState | undefined;
 
 function getState(): WarmState {
-  state ??= createWarmState({ repoRoot });
+  state ??= createWarmState({ repoRoot, pathPolicy });
   return state;
 }
 
@@ -76,7 +90,10 @@ const TOOLS = [
       'On column-reads/column-writes, schemaValidation.validated:false means the table and column were never checked to exist. ' +
       'When truncated is true, caveats.narrowing names the filters that would narrow the query and the limit that would show the rest. ' +
       'Responses also add meta: {refreshedFiles, addedFiles, removedFiles, staleFiles} — the per-call staleness sweep; ' +
-      'a non-empty staleFiles means those files could not be refreshed and answers may be stale for them.',
+      'a non-empty staleFiles means those files could not be refreshed and answers may be stale for them. ' +
+      'Arguments naming files to read (schema-coverage evidence, dead-exports symbolsFile, fixture-uses scope) are confined ' +
+      "to this server's allowed roots — the repo root unless the operator widened it at spawn; a path outside them returns " +
+      "error.kind 'path_not_allowed' and reads nothing. The CLI is unconfined if a path outside the repo is genuinely needed.",
     inputSchema: {
       type: 'object',
       properties: {
@@ -168,7 +185,10 @@ async function main(): Promise<void> {
   const transport = new StdioServerTransport();
   await server.connect(transport);
   // stdout carries JSON-RPC only — all logging goes to stderr.
-  console.error(`ast-dataflow MCP server ready (repoRoot: ${repoRoot})`);
+  console.error(
+    `ast-dataflow MCP server ready (repoRoot: ${repoRoot}; ` +
+      `path roots: ${pathPolicy.allowedRoots.join(', ')})`,
+  );
 }
 
 main().catch((err) => {

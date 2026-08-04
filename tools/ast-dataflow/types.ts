@@ -61,6 +61,7 @@ export type ErrorKind =
   | 'not_callable'
   | 'unknown_table'
   | 'unknown_column'
+  | 'path_not_allowed'
   | 'ORIGIN_NOT_RESOLVABLE'
   | 'ORIGIN_NOT_VALUE_PRODUCING'
   | 'no-fetchers-found';
