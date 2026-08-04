@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Phase-4 evaluation for the ast-dataflow MCP server.
+
+  Authored per the mcp-builder skill's evaluation guide, by an agent that has not
+  read the server implementation. Questions were derived from the protocol surface
+  (tools/list), the README, and the fixture corpus; every answer below was measured
+  by executing the tools, not inferred from source.
+
+  CORPUS BINDING — REQUIRED
+  The server binds its repo root to the working directory it is spawned in, and the
+  root tsconfig excludes the fixture tree. Every question below is posed against the
+  schema-coverage fixture corpus, so the harness must be run from that directory:
+
+    cd tools/ast-dataflow/__tests__/fixtures/21-schema-coverage
+    python /path/to/mcp-builder/scripts/evaluation.py \
+      -t stdio -c bun -a run -a ../../../mcp-server.ts \
+      -o evaluation_report.md \
+      /path/to/evaluation.xml
+
+  Run from anywhere else the corpus differs and every answer changes. The bound
+  corpus is 5 source files (corpus_info reports fileCount 5) plus two sidecars that
+  sit outside the tsconfig include set: supabase/types/database.types.ts (3 tables,
+  12 Row columns) and evidence-py.json.
+
+  Answers are stable: the corpus is a committed test fixture, and no question depends
+  on wall-clock time, counts that grow, or any state a tool call could mutate. All
+  fifteen queries are read-only; nothing here writes.
+-->
+<evaluation>
+
+   <qa_pair>
+      <question>A reviewer is preparing to drop unused columns from the bid_projects table and needs to know which ones are genuinely untouched rather than merely unprovable. Exactly one column of that table has no read site and no write site at any confidence level, and is also free of any dynamic table access that might be reaching it unseen — the only one the tooling is willing to call unused outright. Name that column.</question>
+      <answer>budget_gbp</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>The repository ships a cross-language evidence sidecar, evidence-py.json, produced by the Python column-lineage companion. Recomputing the whole-schema coverage report with that sidecar supplied changes the verdict of exactly one column. What verdict does that column hold once the sidecar has been taken into account? Answer with the verdict string only.</question>
+      <answer>read-only</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>Three tables are declared in this repository's generated Postgres types. For two of them, searching the TypeScript sources for occurrences of the table name as a string literal returns hits. For the third it returns nothing at all, even though that table's name is written verbatim as a string literal three separate times in a source file, and the table is demonstrably queried. Which table is it?</question>
+      <answer>signup_policy</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>The generated types file mentions two field names in connection with bid_projects that are not part of that table's queryable row shape: one belongs to a view in a non-public Postgres schema, the other exists only on the table's insert type. Asking for the read sites of either one fails in the same way. What is the machine-readable error kind returned in both cases?</question>
+      <answer>unknown_column</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>An agent requests the whole-schema coverage report but caps the response at 4 rows, and the reply comes back incomplete. The response itself states the exact cap that would return the full result set instead. What is that number?</question>
+      <answer>12</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>A model asks the server to widen a fixture scan to a directory that sits outside the repository the server was started in. The server declines on the shape of the path alone, before touching the filesystem, so the refusal is identical whether or not the directory exists. What is the value of the kind field on the error it returns?</question>
+      <answer>path_not_allowed</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>One module in this corpus supplies the database-client factory that every other source file depends on. Ignoring import statements entirely and counting only the places where that factory is actually invoked, how many such sites are there?</question>
+      <answer>6</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>One column of the feed_articles table is touched by both a read site and a write site, and yet the coverage report still refuses to certify it as wired, because neither site carries enough confidence to count as evidence. What verdict does that column receive? Answer with the verdict string only.</question>
+      <answer>undecidable</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>Exactly one file in this corpus exports three symbols with a split fate: two of them are reported as having no importer anywhere in the corpus, while the third is imported by four different files. What is the name of that file, including its extension?</question>
+      <answer>supabase-stub.ts</answer>
+   </qa_pair>
+
+   <qa_pair>
+      <question>When the coverage report runs across the whole schema it flags, separately from the per-column verdicts, that one file contains a database table access it could not attribute to any table at all. Which file does it name? Give the file name with its extension.</question>
+      <answer>unattributable-global.ts</answer>
+   </qa_pair>
+
+</evaluation>
