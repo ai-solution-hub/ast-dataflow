@@ -1,7 +1,7 @@
 // Fixture: spread-one-hop — local const with project_id key, then spread into
 // .update(payload). The query follows the reference ONE hop to the declaration.
 //
-// Expected column-writes hits for table='bid_questions', column='project_id':
+// Expected column-writes hits for table='survey_questions', column='project_id':
 //   Scenario A (typed update with resolved spread):
 //     the payload variable declared two lines above contains project_id — exact.
 //
@@ -12,7 +12,7 @@ import { createClient } from './supabase-stub.js';
 type Database = {
   public: {
     Tables: {
-      bid_questions: {
+      survey_questions: {
         Row: {
           project_id: string;
           question_text: string;
@@ -30,7 +30,7 @@ const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 async function updateWithLocalSpread(questionId: string, newProjectId: string) {
   const payload = { project_id: newProjectId, question_text: 'updated' };
   const { data } = await sb
-    .from('bid_questions')
+    .from('survey_questions')
     .update(payload)
     .eq('id', questionId)
     .single();
@@ -44,7 +44,7 @@ async function updateWithParamSpread(
   payload: { project_id: string },
 ) {
   const { data } = await sb
-    .from('bid_questions')
+    .from('survey_questions')
     .update(payload)
     .eq('id', questionId)
     .single();

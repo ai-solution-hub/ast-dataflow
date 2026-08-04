@@ -1,22 +1,22 @@
 // Fixture: one-hop .from(CONST) table-name resolution — writes.
-// Expected column-writes hits for table='bid_questions', column='project_id':
-//   updateViaLiteralConst — .from(BID_QUESTIONS_TABLE).update({ project_id })  method='update'  isTyped=true  confidence='exact'
-//   upsertViaTableMap     — .from(TABLES.bid_questions).upsert({ project_id }) method='upsert'  isTyped=true  confidence='exact'
+// Expected column-writes hits for table='survey_questions', column='project_id':
+//   updateViaLiteralConst — .from(SURVEY_QUESTIONS_TABLE).update({ project_id })  method='update'  isTyped=true  confidence='exact'
+//   upsertViaTableMap     — .from(TABLES.survey_questions).upsert({ project_id }) method='upsert'  isTyped=true  confidence='exact'
 // Decoy that must NOT match: a widened-`string` parameter table argument.
 import { createClient } from './supabase-stub.js';
 
 type Database = {
   public: {
     Tables: {
-      bid_questions: { Row: { project_id: string; question_text: string } };
+      survey_questions: { Row: { project_id: string; question_text: string } };
     };
   };
 };
 
-const BID_QUESTIONS_TABLE = 'bid_questions';
+const SURVEY_QUESTIONS_TABLE = 'survey_questions';
 
 const TABLES = {
-  bid_questions: 'bid_questions',
+  survey_questions: 'survey_questions',
 } as const;
 
 const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
@@ -27,7 +27,7 @@ const sbUntyped = createClient('https://example.supabase.co', 'anon-key');
 
 async function updateViaLiteralConst(procurementId: string) {
   const { data } = await sb
-    .from(BID_QUESTIONS_TABLE)
+    .from(SURVEY_QUESTIONS_TABLE)
     .update({ project_id: procurementId })
     .single();
   return data;
@@ -35,7 +35,7 @@ async function updateViaLiteralConst(procurementId: string) {
 
 async function upsertViaTableMap(procurementId: string) {
   const { data } = await sb
-    .from(TABLES.bid_questions)
+    .from(TABLES.survey_questions)
     .upsert({ project_id: procurementId })
     .single();
   return data;

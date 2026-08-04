@@ -222,19 +222,10 @@ export interface ImportersArgs {
 }
 
 export type ImportStyle =
-  | 'named'
-  | 'default'
-  | 'namespace'
-  | 'typeOnly'
-  | 'reexport';
+  'named' | 'default' | 'namespace' | 'typeOnly' | 'reexport';
 
 export type ReferenceKind =
-  | 'typeReference'
-  | 'jsxComponent'
-  | 'read'
-  | 'write'
-  | 'reexport'
-  | 'typeOnly';
+  'typeReference' | 'jsxComponent' | 'read' | 'write' | 'reexport' | 'typeOnly';
 
 export interface ReferencesArgs {
   symbol: string;
@@ -283,12 +274,7 @@ export interface ColumnReadsArgs {
  * - rpc-payload — `.rpc('fn', { col: v })` payload key.
  */
 export type ColumnReadMethod =
-  | 'select'
-  | 'eq'
-  | 'filter'
-  | 'order'
-  | 'match'
-  | 'rpc-payload';
+  'select' | 'eq' | 'filter' | 'order' | 'match' | 'rpc-payload';
 
 export interface ColumnReadResult extends BaseResult {
   method: ColumnReadMethod;
@@ -314,18 +300,15 @@ export interface ColumnWritesArgs {
  * - upsert       — `.upsert(obj | obj[])` — insert-or-update.
  * - match        — `.match(obj)` — WHERE-clause filter; treated as a column
  *                  reference site since it names a column to match on.
- * - rpc-payload  — `.rpc('fn', { col: x })` payload key. Union member is
- *                  declared per PRODUCT.md invariant 6; detection is deferred
- *                  to a follow-up (S5+) — no production RPC payloads in the KH
- *                  corpus name `bid_questions.project_id`, so the false-negative
- *                  surface is empty today.
+ * - rpc-payload  — `.rpc('fn', { col: x })` payload key. The union member is
+ *                  declared, but detection is not implemented: no RPC payload
+ *                  naming a target column was found in the corpora this was
+ *                  measured against, so the false-negative surface is empty in
+ *                  practice. Do not read the member as a shape the walk
+ *                  detects.
  */
 export type ColumnWriteMethod =
-  | 'insert'
-  | 'update'
-  | 'upsert'
-  | 'match'
-  | 'rpc-payload';
+  'insert' | 'update' | 'upsert' | 'match' | 'rpc-payload';
 
 export interface ColumnWriteResult extends BaseResult {
   method: ColumnWriteMethod;
@@ -567,11 +550,7 @@ export interface EnumUseResult extends BaseResult {
  *               does not match any of the more-specific kinds above.
  */
 export type StringLiteralUseKind =
-  | 'viMock'
-  | 'jsxProp'
-  | 'sqlTag'
-  | 'envKey'
-  | 'argument';
+  'viMock' | 'jsxProp' | 'sqlTag' | 'envKey' | 'argument';
 
 /**
  * Arguments for the string-literal-uses query (PRODUCT.md inv. 10).
@@ -834,11 +813,7 @@ export interface TypeDriftResult extends BaseResult {
  *                 unattributable sites bounded to the table.
  */
 export type SchemaCoverageVerdict =
-  | 'unwired'
-  | 'undecidable'
-  | 'write-only'
-  | 'read-only'
-  | 'wired';
+  'unwired' | 'undecidable' | 'write-only' | 'read-only' | 'wired';
 
 /**
  * Arguments for the schema-coverage query.

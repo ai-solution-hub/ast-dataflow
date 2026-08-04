@@ -6,7 +6,7 @@
 export type Database = {
   public: {
     Tables: {
-      bid_questions: {
+      survey_questions: {
         Row: {
           created_at: string;
           id: string;

@@ -292,7 +292,7 @@ describe('schema-coverage — ordering + envelope', () => {
 
 describe('schema-coverage — structured errors', () => {
   it('rejects a table that is not in the schema with unknown_table', async () => {
-    const response = await runCoverage({ table: 'bid_questions' });
+    const response = await runCoverage({ table: 'survey_questions' });
     expect(response.error?.kind).toBe('unknown_table');
     expect(response.results).toEqual([]);
   });

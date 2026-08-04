@@ -71,8 +71,7 @@ function readFileSafe(absPath: string): string | null {
 // ── JSON mode — hand-rolled string-token lexer ───────────────────────────────
 
 type JsonFrame =
-  | { type: 'object'; lastKey: string | null }
-  | { type: 'array'; index: number };
+  { type: 'object'; lastKey: string | null } | { type: 'array'; index: number };
 
 interface JsonHit {
   offset: number; // 0-based offset of the opening quote

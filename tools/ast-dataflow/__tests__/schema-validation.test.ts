@@ -35,9 +35,9 @@ describe('schema enumeration', () => {
     if (!schema.available) return;
     expect([...schema.tables.keys()].sort()).toEqual([
       'bid_projects',
-      'bid_questions',
+      'survey_questions',
     ]);
-    expect(schema.tables.get('bid_questions')).toEqual([
+    expect(schema.tables.get('survey_questions')).toEqual([
       'created_at',
       'id',
       'project_id',
@@ -50,7 +50,7 @@ describe('schema enumeration', () => {
     // contract these queries address, so the decoy must not be accepted.
     const outcome = lookupTableColumn(
       READS_FIXTURE,
-      'bid_questions',
+      'survey_questions',
       'insert_only_decoy',
     );
     expect(outcome.failure?.kind).toBe('unknown_column');
@@ -69,23 +69,23 @@ describe('column-reads — unknown table / column', () => {
   it('rejects an unknown table with unknown_table and a hint, not a silent zero', async () => {
     const { project, repoRoot } = projectAt(READS_FIXTURE);
     const response = await columnReads(
-      { table: 'bid_question', column: 'project_id' },
+      { table: 'survey_question', column: 'project_id' },
       project,
       repoRoot,
     );
 
     expect(response.error?.kind).toBe('unknown_table');
-    expect(response.error?.message).toContain("Table 'bid_question'");
+    expect(response.error?.message).toContain("Table 'survey_question'");
     expect(response.error?.message).toContain('2 tables');
     // The near-miss is the whole point of the hint for a typo.
-    expect(response.error?.hint).toContain('bid_questions');
+    expect(response.error?.hint).toContain('survey_questions');
     expect(response.results).toEqual([]);
   });
 
   it('rejects an unknown column on a real table with unknown_column and the known columns', async () => {
     const { project, repoRoot } = projectAt(READS_FIXTURE);
     const response = await columnReads(
-      { table: 'bid_questions', column: 'projectid' },
+      { table: 'survey_questions', column: 'projectid' },
       project,
       repoRoot,
     );
@@ -103,7 +103,7 @@ describe('column-reads — unknown table / column', () => {
     // that the column does not exist at all.
     const { project, repoRoot } = projectAt(READS_FIXTURE);
     const response = await columnReads(
-      { table: 'bid_questions', column: 'no_such_column' },
+      { table: 'survey_questions', column: 'no_such_column' },
       project,
       repoRoot,
     );
@@ -114,7 +114,7 @@ describe('column-reads — unknown table / column', () => {
   it('still answers a real table and column normally', async () => {
     const { project, repoRoot } = projectAt(READS_FIXTURE);
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -127,13 +127,13 @@ describe('column-writes — unknown table / column', () => {
   it('rejects an unknown table with unknown_table', async () => {
     const { project, repoRoot } = projectAt(WRITES_FIXTURE);
     const response = await columnWrites(
-      { table: 'bid_quesions', column: 'project_id' },
+      { table: 'survey_quesions', column: 'project_id' },
       project,
       repoRoot,
     );
 
     expect(response.error?.kind).toBe('unknown_table');
-    expect(response.error?.hint).toContain('bid_questions');
+    expect(response.error?.hint).toContain('survey_questions');
     expect(response.results).toEqual([]);
   });
 
@@ -145,7 +145,7 @@ describe('column-writes — unknown table / column', () => {
     // column the schema has never had.
     const { project, repoRoot } = projectAt(WRITES_FIXTURE);
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'ghost_column' },
+      { table: 'survey_questions', column: 'ghost_column' },
       project,
       repoRoot,
     );
@@ -159,7 +159,7 @@ describe('column-writes — unknown table / column', () => {
   it('still answers a real table and column normally', async () => {
     const { project, repoRoot } = projectAt(WRITES_FIXTURE);
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );

@@ -116,7 +116,7 @@ describe('column-writes — spread and identifier payloads', () => {
   it('reports .update({ ...payload }) as an indirect write', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -133,7 +133,7 @@ describe('column-writes — spread and identifier payloads', () => {
   it('reports .insert([row]) with an identifier element as indirect', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -150,7 +150,7 @@ describe('column-reads — filter/order chain methods', () => {
   it('reports .in() as a filter read with the concrete chainMethod', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -165,7 +165,7 @@ describe('column-reads — filter/order chain methods', () => {
   it('reports .order() as an order read', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnReads(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );

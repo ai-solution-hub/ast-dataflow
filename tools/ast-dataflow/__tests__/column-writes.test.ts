@@ -18,7 +18,7 @@ describe('column-writes query — typed .insert()', () => {
   it('finds single-row .insert({ project_id }) with exact confidence', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -32,7 +32,7 @@ describe('column-writes query — typed .insert()', () => {
       file: 'typed-insert.ts',
       method: 'insert',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
       confidence: 'exact',
     });
@@ -41,7 +41,7 @@ describe('column-writes query — typed .insert()', () => {
   it('finds array-form .insert([{ project_id }]) as an insert hit', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -61,7 +61,7 @@ describe('column-writes query — typed .update()', () => {
   it('finds .update({ project_id: value }) longhand with exact confidence', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -74,7 +74,7 @@ describe('column-writes query — typed .update()', () => {
       file: 'typed-update.ts',
       method: 'update',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
       confidence: 'exact',
     });
@@ -83,7 +83,7 @@ describe('column-writes query — typed .update()', () => {
   it('finds .update({ project_id }) shorthand as an update hit', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -103,7 +103,7 @@ describe('column-writes query — typed .upsert()', () => {
   it('finds single-row .upsert({ project_id }) with exact confidence', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -116,7 +116,7 @@ describe('column-writes query — typed .upsert()', () => {
       file: 'typed-upsert.ts',
       method: 'upsert',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
       confidence: 'exact',
     });
@@ -125,7 +125,7 @@ describe('column-writes query — typed .upsert()', () => {
   it('finds array-form .upsert([{ project_id }]) as an upsert hit', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -144,7 +144,7 @@ describe('column-writes query — .match() as column reference site', () => {
   it('finds .match({ project_id: value }) longhand hit with method=match', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -157,7 +157,7 @@ describe('column-writes query — .match() as column reference site', () => {
       file: 'match-object.ts',
       method: 'match',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
       confidence: 'exact',
     });
@@ -166,7 +166,7 @@ describe('column-writes query — .match() as column reference site', () => {
   it('finds .match({ project_id }) shorthand hit with method=match', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -186,7 +186,7 @@ describe('column-writes query — spread one-hop chase', () => {
   it('resolves local const payload with project_id to exact confidence', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -212,7 +212,7 @@ describe('column-writes query — spread one-hop chase', () => {
   it('falls back to indirect confidence when spread source is a function parameter', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -235,13 +235,13 @@ describe('column-writes query — .from(CONST) table-name resolution', () => {
   it('resolves a literal-typed const table argument on .update() to exact', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
 
-    // const-table-write.ts line 29: .from(BID_QUESTIONS_TABLE).update() — the
-    // const's type is the string-literal 'bid_questions'.
+    // const-table-write.ts line 29: .from(SURVEY_QUESTIONS_TABLE).update() — the
+    // const's type is the string-literal 'survey_questions'.
     const hits = response.results.filter(
       (r) => r.file === 'const-table-write.ts' && r.method === 'update',
     );
@@ -249,7 +249,7 @@ describe('column-writes query — .from(CONST) table-name resolution', () => {
     expect(hits[0]).toMatchObject({
       method: 'update',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
       confidence: 'exact',
       line: 29,
@@ -259,13 +259,13 @@ describe('column-writes query — .from(CONST) table-name resolution', () => {
   it('resolves an as-const map property table argument on .upsert() to exact', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
 
-    // const-table-write.ts line 37: .from(TABLES.bid_questions).upsert() — the
-    // `as const` map property's type is the string-literal 'bid_questions'.
+    // const-table-write.ts line 37: .from(TABLES.survey_questions).upsert() — the
+    // `as const` map property's type is the string-literal 'survey_questions'.
     const hits = response.results.filter(
       (r) => r.file === 'const-table-write.ts' && r.method === 'upsert',
     );
@@ -273,7 +273,7 @@ describe('column-writes query — .from(CONST) table-name resolution', () => {
     expect(hits[0]).toMatchObject({
       method: 'upsert',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: true,
       confidence: 'exact',
       line: 37,
@@ -283,7 +283,7 @@ describe('column-writes query — .from(CONST) table-name resolution', () => {
   it('excludes a widened-string table argument as unattributable', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -304,7 +304,7 @@ describe('column-writes query — typed-detection guard', () => {
   it('reports a hand-rolled structural builder .insert() as isTyped=false / indirect', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -318,7 +318,7 @@ describe('column-writes query — typed-detection guard', () => {
     expect(hits[0]).toMatchObject({
       method: 'insert',
       columnPath: 'project_id',
-      table: 'bid_questions',
+      table: 'survey_questions',
       isTyped: false,
       confidence: 'indirect',
       line: 21,
@@ -333,13 +333,13 @@ describe('column-writes query — false-positive guard', () => {
   it('suppresses hits from noise.ts (wrong table and wrong column)', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
 
     // Wrong table — other_table.insert({ project_id }) must not appear.
-    // Wrong column — bid_questions.insert({ other_column }) must not appear.
+    // Wrong column — survey_questions.insert({ other_column }) must not appear.
     // Bare string literal — must not appear.
     const noiseHits = response.results.filter((r) => r.file === 'noise.ts');
     expect(noiseHits).toHaveLength(0);
@@ -353,7 +353,7 @@ describe('column-writes query — excludeTests filter', () => {
   it('returns results when excludeTests is false (default)', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id', excludeTests: false },
+      { table: 'survey_questions', column: 'project_id', excludeTests: false },
       project,
       repoRoot,
     );
@@ -363,29 +363,29 @@ describe('column-writes query — excludeTests filter', () => {
   it('suppresses __tests__/** hits when excludeTests is true', async () => {
     const { project, repoRoot } = makeProject();
     // Inject a synthetic source file under a __tests__/ subpath of the
-    // fixture project with a write chain against bid_questions.project_id.
+    // fixture project with a write chain against survey_questions.project_id.
     project.createSourceFile(
       resolve(FIXTURE_DIR, '__tests__', 'synthetic-test-file.ts'),
       `
 import { createClient } from '../supabase-stub.js';
 type Database = {
-  public: { Tables: { bid_questions: { Row: { project_id: string } } } };
+  public: { Tables: { survey_questions: { Row: { project_id: string } } } };
 };
 const sb = createClient<Database>('', '');
 export function writeProjectId(procurementId: string) {
-  return sb.from('bid_questions').insert({ project_id: procurementId });
+  return sb.from('survey_questions').insert({ project_id: procurementId });
 }
 `,
       { overwrite: true },
     );
 
     const without = await columnWrites(
-      { table: 'bid_questions', column: 'project_id', excludeTests: false },
+      { table: 'survey_questions', column: 'project_id', excludeTests: false },
       project,
       repoRoot,
     );
     const withFlag = await columnWrites(
-      { table: 'bid_questions', column: 'project_id', excludeTests: true },
+      { table: 'survey_questions', column: 'project_id', excludeTests: true },
       project,
       repoRoot,
     );
@@ -421,7 +421,7 @@ describe('column-writes query — structured error', () => {
   it('returns parse_error when column is empty', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: '' },
+      { table: 'survey_questions', column: '' },
       project,
       repoRoot,
     );
@@ -437,19 +437,19 @@ describe('column-writes query — metadata', () => {
   it('echoes table in every result row', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
     for (const row of response.results) {
-      expect(row.table).toBe('bid_questions');
+      expect(row.table).toBe('survey_questions');
     }
   });
 
   it('records durationMs', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -459,7 +459,7 @@ describe('column-writes query — metadata', () => {
   it('sets line and column numbers on every result', async () => {
     const { project, repoRoot } = makeProject();
     const response = await columnWrites(
-      { table: 'bid_questions', column: 'project_id' },
+      { table: 'survey_questions', column: 'project_id' },
       project,
       repoRoot,
     );
