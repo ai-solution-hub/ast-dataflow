@@ -50,6 +50,40 @@ the project load (~6 s cold, ~100–200 ms warm). Register in your `.mcp.json`:
 }
 ```
 
+The server binds its repo root to the working directory it is spawned in.
+
+### Path confinement
+
+Three arguments name files the tool then opens — `schema-coverage --evidence`,
+`dead-exports --symbolsFile`, and `fixture-uses --scope` (the one `scope` that globs disk
+rather than filtering the loaded corpus). The two surfaces treat them differently, because
+their callers differ:
+
+| surface | policy                                                                                                                                                                                     |
+| ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| CLI     | unconfined — the caller already holds the shell's authority, and out-of-repo sidecars are a live requirement (a producer writing to `$TMPDIR` then passing absolute paths to `--evidence`) |
+| MCP     | confined to an allowlist, `[repoRoot]` by default — the caller is a model, not the operator                                                                                                |
+
+To let the server read a sidecar written outside the repo, name the extra roots at spawn:
+
+```json
+{
+  "mcpServers": {
+    "ast-dataflow": {
+      "command": "bunx",
+      "args": ["ast-dataflow-mcp"],
+      "env": { "AST_DATAFLOW_ALLOWED_ROOTS": "/tmp/census-evidence" }
+    }
+  }
+}
+```
+
+`AST_DATAFLOW_ALLOWED_ROOTS` is `PATH`-delimited (`:` on POSIX); relative entries resolve
+against the repo root. It is read once at spawn — no request can widen its own allowlist.
+A path outside the roots returns `error.kind: "path_not_allowed"` and reads nothing; the
+refusal is decided on path shape before any filesystem call, so it is identical whether or
+not the file exists and cannot be used to test for one.
+
 ## Response envelope
 
 Every query returns the same envelope, on both surfaces, so a zero-row answer is readable
