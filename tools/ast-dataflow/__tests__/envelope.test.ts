@@ -12,7 +12,11 @@ import { QUERY_CAVEATS } from '@/tools/ast-dataflow/caveats';
 import { QUERY_NAMES, dispatch } from '@/tools/ast-dataflow/dispatch';
 
 const REFERENCES_FIXTURE = resolve(__dirname, 'fixtures', '06-references');
-const COLUMN_READS_FIXTURE = resolve(__dirname, 'fixtures', '07-column-reads');
+const COLUMN_WRITES_FIXTURE = resolve(
+  __dirname,
+  'fixtures',
+  '08-column-writes',
+);
 
 function projectAt(fixtureDir: string) {
   return createProject({
@@ -71,14 +75,14 @@ describe('envelope — a zero-row answer says why it might be zero (G2)', () => 
   });
 
   it('column-reads: zero rows disclose whether the table and column were validated at all', async () => {
-    const { project, repoRoot } = projectAt(COLUMN_READS_FIXTURE);
-    // This fixture ships no generated types, so neither the table nor the
-    // column can be checked to exist — and a table nobody queries produces the
-    // silent `[]` that G3 is about. The response must SAY the arguments went
-    // unvalidated rather than let the zero read as "no sites exist".
+    // A repo with no generated Postgres types: the table and column cannot be
+    // checked to exist, so this zero could equally be a typo. The response
+    // must SAY the arguments went unvalidated rather than let the zero read
+    // as "no sites exist".
+    const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
     const response = await dispatch(
       'column-reads',
-      { table: 'table_that_is_not_in_this_fixture', column: 'project_id' },
+      { table: 'bid_questions', column: 'project_id' },
       project,
       repoRoot,
     );
@@ -92,6 +96,28 @@ describe('envelope — a zero-row answer says why it might be zero (G2)', () => 
     expect(caveats?.corpus.fileCount).toBeGreaterThan(0);
     expect(caveats?.searched.join(' ')).toContain('.eq()');
     expect(caveats?.invisibleSurfaces.join(' ')).toContain('raw SQL');
+  });
+
+  it('column-writes: a validated zero is marked as trustworthy, not merely empty', async () => {
+    // The other half of the pair: this fixture DOES ship generated types, the
+    // column really exists, and nothing writes it. That zero means something,
+    // and the caveats are what let a caller tell it apart from the one above.
+    const { project, repoRoot } = projectAt(COLUMN_WRITES_FIXTURE);
+    const response = await dispatch(
+      'column-writes',
+      { table: 'bid_projects', column: 'title' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.results).toEqual([]);
+    expect(response.error).toBeUndefined();
+    expect(response.caveats?.schemaValidation).toMatchObject({
+      validated: true,
+      source: 'supabase/types/database.types.ts',
+      tableCount: 2,
+    });
+    expect(response.caveats?.schemaValidation?.reason).toBeUndefined();
   });
 });
 

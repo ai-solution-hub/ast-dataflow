@@ -43,11 +43,15 @@ export interface CallSiteResult extends BaseResult {
  * - not_callable    — callees: the resolved symbol has no callable body
  *                     (interface, plain const, type alias, or a bodyless
  *                     overload/ambient signature).
- * - unknown_table   — schema-coverage: args.table is not a table in
+ * - unknown_table   — schema-addressed queries (schema-coverage, column-reads,
+ *                     column-writes): args.table is not a table in
  *                     Database['public']['Tables'] (kills the silent-0/0
- *                     dropped-table failure mode).
- * - unknown_column  — schema-coverage: args.column is not a Row column of the
- *                     given table.
+ *                     dropped-table failure mode). Raised only where the
+ *                     target repo ships generated types; where it does not,
+ *                     `caveats.schemaValidation` records that the arguments
+ *                     went unvalidated.
+ * - unknown_column  — the same three queries: args.column is not a Row column
+ *                     of the given table.
  */
 export type ErrorKind =
   | 'unknown_file'
