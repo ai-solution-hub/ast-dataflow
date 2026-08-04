@@ -61,6 +61,68 @@ export type ErrorKind =
   | 'ORIGIN_NOT_VALUE_PRODUCING'
   | 'no-fetchers-found';
 
+/**
+ * The corpus a query's answer was computed over. A zero-row answer is only
+ * interpretable against this: 0 hits in 4 files and 0 hits in 4000 files are
+ * different claims, and today they were the same payload.
+ */
+export interface CorpusSummary {
+  /** Source files in the ts-morph project — the answer's universe. */
+  fileCount: number;
+  /** The tsconfig that enumerated those files (repo-relative when under the root). */
+  tsconfigPath: string;
+  /** True when the query dropped test files from the walk (`excludeTests`). */
+  testFilesExcluded: boolean;
+  /** The glob filter that narrowed the walk, when one was supplied. */
+  scope?: string;
+}
+
+/**
+ * Whether a schema-addressed query's `table`/`column` arguments were checked
+ * against the target repo's generated Postgres types.
+ *
+ * `validated: false` is the load-bearing case: it means a zero-row answer
+ * cannot distinguish "no sites" from "no such column", because the generated
+ * types were not available to check against. `reason` carries why.
+ */
+export interface SchemaValidation {
+  validated: boolean;
+  /** The generated-types file consulted (repo-relative). */
+  source: string;
+  /** Tables enumerated from that file — present when validated. */
+  tableCount?: number;
+  /** Why validation could not run — present when not validated. */
+  reason?: string;
+}
+
+/**
+ * The uniform caveat block every query response carries (the house style
+ * schema-coverage set, generalised in caveats.ts and attached by dispatch).
+ *
+ * It exists so a zero-row response says WHY it might be zero. Without it,
+ * "no sites exist", "no sites in the shapes I search", and "your target is
+ * not in my corpus" are structurally identical payloads.
+ */
+export interface QueryCaveats {
+  /** What evidence this answer rests on, in one sentence. */
+  scan: string;
+  /** The AST shapes / node kinds this query actually matched on. */
+  searched: string[];
+  /** Surfaces this scan structurally cannot see, whatever the row count. */
+  invisibleSurfaces: string[];
+  corpus: CorpusSummary;
+  /**
+   * Whether `summary` counts every row the query found or only the rows that
+   * survived truncation. Never ambiguous: truncation skews a histogram, so
+   * the basis is stated rather than assumed.
+   */
+  summaryBasis: 'all-rows' | 'shown-rows';
+  /** Present only when `truncated` — concrete ways to narrow the result set. */
+  narrowing?: string[];
+  /** Present for schema-addressed queries (column-reads / column-writes). */
+  schemaValidation?: SchemaValidation;
+}
+
 export interface QueryResponse<R extends BaseResult> {
   query: string;
   args: Record<string, unknown>;
@@ -68,6 +130,18 @@ export interface QueryResponse<R extends BaseResult> {
   truncated: boolean;
   totalEstimated?: number;
   durationMs: number;
+  /**
+   * Always populated on responses that come through `dispatch` (the CLI and
+   * MCP paths). Optional in the type because the query functions themselves
+   * return before the envelope is attached.
+   */
+  caveats?: QueryCaveats;
+  /**
+   * Histogram over the query's natural buckets (reference kind, write method,
+   * call kind, …). `caveats.summaryBasis` states whether it covers all rows
+   * or only the shown ones.
+   */
+  summary?: Record<string, number>;
   /** Present when the query cannot be executed due to a structured error. */
   error?: {
     kind: ErrorKind;
@@ -886,9 +960,7 @@ export interface SchemaCoverageResult {
  * — a producer drifting from the schema reports loudly instead of vanishing).
  * Both are omitted entirely when no sidecar was merged / nothing was unknown.
  */
-export interface SchemaCoverageCaveats {
-  scan: string;
-  invisibleSurfaces: string[];
+export interface SchemaCoverageCaveats extends QueryCaveats {
   unattributableSites: Record<string, number>;
   mergedEvidence?: MergedEvidenceSource[];
   evidenceUnknownTables?: Record<string, number>;

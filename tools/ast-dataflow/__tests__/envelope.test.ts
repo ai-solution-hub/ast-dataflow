@@ -1,0 +1,184 @@
+/**
+ * The uniform response envelope (caveats + summary + truncation narrowing).
+ *
+ * These tests drive `dispatch`, not the query functions, because dispatch is
+ * what the CLI and the MCP server both call — testing the query function
+ * directly would pass while the shipped surface stayed silent.
+ */
+import { resolve } from 'node:path';
+import { describe, expect, it } from 'vitest';
+import { createProject } from '@/tools/ast-dataflow';
+import { QUERY_CAVEATS } from '@/tools/ast-dataflow/caveats';
+import { QUERY_NAMES, dispatch } from '@/tools/ast-dataflow/dispatch';
+
+const REFERENCES_FIXTURE = resolve(__dirname, 'fixtures', '06-references');
+const COLUMN_READS_FIXTURE = resolve(__dirname, 'fixtures', '07-column-reads');
+
+function projectAt(fixtureDir: string) {
+  return createProject({
+    tsConfigFilePath: resolve(fixtureDir, 'tsconfig.json'),
+    repoRoot: fixtureDir,
+  });
+}
+
+describe('envelope — catalogue coverage', () => {
+  it('describes every query in the catalogue', () => {
+    // Exhaustiveness is enforced by the type system too; this measures it, so
+    // a future query cannot ship with an empty envelope.
+    expect(Object.keys(QUERY_CAVEATS).sort()).toEqual([...QUERY_NAMES].sort());
+  });
+
+  it('gives every query a non-empty scan statement and searched-shape list', () => {
+    for (const query of QUERY_NAMES) {
+      const spec = QUERY_CAVEATS[query];
+      expect(spec.scan.length, `${query} scan`).toBeGreaterThan(0);
+      expect(spec.searched.length, `${query} searched`).toBeGreaterThan(0);
+      expect(
+        spec.invisibleSurfaces.length,
+        `${query} invisibleSurfaces`,
+      ).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe('envelope — a zero-row answer says why it might be zero (G2)', () => {
+  it('references: zero rows still report the corpus, the shapes searched, and the blind spots', async () => {
+    const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
+    // MY_CONSTANT is real and referenced — but never as a JSX component, so
+    // this is the "no sites in the shapes I filtered to" zero.
+    const response = await dispatch(
+      'references',
+      { symbol: 'target.ts:MY_CONSTANT', kind: 'jsxComponent' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.results).toEqual([]);
+    expect(response.error).toBeUndefined();
+
+    const caveats = response.caveats;
+    expect(caveats).toBeDefined();
+    expect(caveats?.corpus.fileCount).toBeGreaterThan(0);
+    expect(caveats?.corpus.tsconfigPath).toBe('tsconfig.json');
+    expect(caveats?.corpus.testFilesExcluded).toBe(false);
+    expect(caveats?.searched).toContain('JSX component tags');
+    expect(caveats?.invisibleSurfaces.join(' ')).toContain(
+      'string literals that merely spell the name',
+    );
+    // Nothing was dropped, so the histogram covers everything it found.
+    expect(caveats?.summaryBasis).toBe('all-rows');
+    expect(caveats?.narrowing).toBeUndefined();
+  });
+
+  it('column-reads: zero rows disclose whether the table and column were validated at all', async () => {
+    const { project, repoRoot } = projectAt(COLUMN_READS_FIXTURE);
+    // This fixture ships no generated types, so neither the table nor the
+    // column can be checked to exist — and a table nobody queries produces the
+    // silent `[]` that G3 is about. The response must SAY the arguments went
+    // unvalidated rather than let the zero read as "no sites exist".
+    const response = await dispatch(
+      'column-reads',
+      { table: 'table_that_is_not_in_this_fixture', column: 'project_id' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.results).toEqual([]);
+    const caveats = response.caveats;
+    expect(caveats?.schemaValidation?.validated).toBe(false);
+    expect(caveats?.schemaValidation?.reason).toContain(
+      'supabase/types/database.types.ts',
+    );
+    expect(caveats?.corpus.fileCount).toBeGreaterThan(0);
+    expect(caveats?.searched.join(' ')).toContain('.eq()');
+    expect(caveats?.invisibleSurfaces.join(' ')).toContain('raw SQL');
+  });
+});
+
+describe('envelope — bucket histogram', () => {
+  it('counts references by kind over all rows when nothing was dropped', async () => {
+    const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
+    const response = await dispatch(
+      'references',
+      { symbol: 'target.ts:MY_CONSTANT' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.summary).toBeDefined();
+    const summary = response.summary ?? {};
+    const totalCounted = Object.values(summary).reduce((a, b) => a + b, 0);
+    expect(totalCounted).toBe(response.results.length);
+    expect(response.caveats?.summaryBasis).toBe('all-rows');
+  });
+});
+
+describe('envelope — truncation offers a narrowing path (G10)', () => {
+  it('names the shown/total split, the real filters, and a concrete limit to re-run with', async () => {
+    const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
+    const response = await dispatch(
+      'references',
+      { symbol: 'target.ts:MY_CONSTANT', limit: 1 },
+      project,
+      repoRoot,
+    );
+
+    expect(response.truncated).toBe(true);
+    expect(response.results).toHaveLength(1);
+    const total = response.totalEstimated ?? 0;
+    expect(total).toBeGreaterThan(1);
+
+    const narrowing = response.caveats?.narrowing;
+    expect(
+      narrowing,
+      'truncated responses must carry a narrowing block',
+    ).toBeDefined();
+    const text = (narrowing ?? []).join('\n');
+    expect(text).toContain(`Showing 1 of ${total} rows`);
+    // The kind filter is real for references, so it is safe to advertise.
+    expect(text).toContain('--kind');
+    expect(text).toContain('(arg: kind)');
+    // The limit line must name a cap that would actually show more.
+    expect(text).toContain(`--limit ${total}`);
+    expect(text).toContain('it is currently 1');
+  });
+
+  it('marks the histogram as shown-rows only when rows were dropped', async () => {
+    const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
+    const response = await dispatch(
+      'references',
+      { symbol: 'target.ts:MY_CONSTANT', limit: 1 },
+      project,
+      repoRoot,
+    );
+    expect(response.caveats?.summaryBasis).toBe('shown-rows');
+  });
+
+  it('only advertises filters the query actually honours', () => {
+    // A narrowing hint for an inert flag is worse than no hint: it sends the
+    // caller to re-run a query that will return exactly the same rows.
+    // `callers` and `dead-exports` declare a `scope` arg that no code reads.
+    for (const query of ['callers', 'dead-exports'] as const) {
+      const args = QUERY_CAVEATS[query].filters.map((f) => f.arg);
+      expect(args, `${query} must not advertise scope`).not.toContain('scope');
+    }
+  });
+});
+
+describe('envelope — a query with richer caveats of its own keeps them', () => {
+  it('schema-coverage keeps its scan text, invisible surfaces and all-rows basis', async () => {
+    const fixture = resolve(__dirname, 'fixtures', '21-schema-coverage');
+    const { project, repoRoot } = projectAt(fixture);
+    const response = await dispatch('schema-coverage', {}, project, repoRoot);
+
+    const caveats = response.caveats;
+    expect(caveats?.scan).toContain('TypeScript query-chain evidence');
+    expect(caveats?.invisibleSurfaces).toContain('RPC function bodies (SQL)');
+    // Its own per-column histogram is computed pre-truncation.
+    expect(caveats?.summaryBasis).toBe('all-rows');
+    expect(response.summary?.unwired).toBeGreaterThanOrEqual(0);
+    // The shared block still filled in what the query did not set.
+    expect(caveats?.corpus.fileCount).toBeGreaterThan(0);
+    expect(caveats?.schemaValidation?.validated).toBe(true);
+  });
+});

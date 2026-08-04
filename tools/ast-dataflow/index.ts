@@ -9,8 +9,21 @@ export { columnReads } from './queries/column-reads';
 export { columnWrites } from './queries/column-writes';
 export { deadExports } from './queries/dead-exports';
 export { AstResolverError } from './resolve';
+/**
+ * The enveloped entry point. A library consumer should call `dispatch` rather
+ * than a query function directly: the caveats, bucket histogram and truncation
+ * narrowing are attached there, so a direct call gets rows without the context
+ * needed to read a zero.
+ */
+export { dispatch, QUERY_NAMES } from './dispatch';
+export type { QueryArgMap, QueryName, QueryResponseMap } from './dispatch';
+export { loadSchema, lookupTableColumn, SCHEMA_TYPES_PATH } from './schema';
+export type { SchemaEnumeration } from './schema';
 export type {
   BaseResult,
+  CorpusSummary,
+  QueryCaveats,
+  SchemaValidation,
   CalleeCallKind,
   CalleeResult,
   CalleesArgs,

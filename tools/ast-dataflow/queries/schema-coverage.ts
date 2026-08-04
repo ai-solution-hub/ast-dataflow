@@ -40,11 +40,8 @@ import {
   Project,
   SyntaxKind,
   type CallExpression,
-  type InterfaceDeclaration,
   type Node,
-  type PropertySignature,
   type SourceFile,
-  type TypeLiteralNode,
 } from 'ts-morph';
 import type {
   Confidence,
@@ -56,6 +53,8 @@ import type {
   SchemaCoverageResult,
   SchemaCoverageVerdict,
 } from '../types';
+import { QUERY_CAVEATS, corpusSummary } from '../caveats';
+import { SCHEMA_TYPES_PATH, loadSchema } from '../schema';
 import { toRepoRelative } from '../resolve';
 import {
   collectChain,
@@ -72,8 +71,6 @@ import { inspectWriteArg } from './column-writes';
 import { buildScopeMatcher } from './type-drift-detect';
 
 const DEFAULT_LIMIT = 2000;
-
-const SCHEMA_TYPES_PATH = 'supabase/types/database.types.ts';
 
 const EVIDENCE_REFS_PER_DIRECTION = 3;
 
@@ -113,126 +110,15 @@ const CONFIDENCE_RANK: Record<Confidence, number> = {
   indirect: 2,
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Schema enumeration — ad-hoc ts-morph parse of database.types.ts
-// (the root tsconfig excludes supabase/, so the main project cannot see it;
-// same technique as fixture-uses: pure parse, no type checking needed).
-// ─────────────────────────────────────────────────────────────────────────────
-
+/**
+ * A structured failure that aborts the query. Schema-enumeration failures
+ * arrive in this shape from the shared module (schema.ts); sidecar failures
+ * are built locally.
+ */
 interface SchemaParseFailure {
   kind: ErrorKind;
   message: string;
   hint: string;
-}
-
-/** PropertySignature names may be quoted in generated types — normalise. */
-function unquoteName(name: string): string {
-  if (
-    (name.startsWith("'") && name.endsWith("'")) ||
-    (name.startsWith('"') && name.endsWith('"'))
-  ) {
-    return name.slice(1, -1);
-  }
-  return name;
-}
-
-/** The TypeLiteral of a property member, or null (mapped types etc.). */
-function propTypeLiteral(prop: PropertySignature): TypeLiteralNode | null {
-  const typeNode = prop.getTypeNode();
-  return typeNode?.getKind() === SyntaxKind.TypeLiteral
-    ? (typeNode as TypeLiteralNode)
-    : null;
-}
-
-/** Find a named property member's TypeLiteral inside a container. */
-function memberTypeLiteral(
-  container: TypeLiteralNode | InterfaceDeclaration,
-  name: string,
-): TypeLiteralNode | null {
-  for (const member of container.getMembers()) {
-    if (member.getKind() !== SyntaxKind.PropertySignature) continue;
-    const prop = member as PropertySignature;
-    if (unquoteName(prop.getName()) !== name) continue;
-    return propTypeLiteral(prop);
-  }
-  return null;
-}
-
-/**
- * Parse Database['public']['Tables'] → table name → Row column names.
- * Handles both the current generator output (`export type Database = {…}`)
- * and the legacy interface form.
- */
-function enumerateSchema(
-  repoRoot: string,
-): Map<string, string[]> | SchemaParseFailure {
-  const absPath = resolve(repoRoot, SCHEMA_TYPES_PATH);
-  const adhoc = new Project({
-    skipAddingFilesFromTsConfig: true,
-    compilerOptions: { skipLibCheck: true },
-  });
-
-  let sf: SourceFile;
-  try {
-    sf = adhoc.addSourceFileAtPath(absPath);
-  } catch {
-    return {
-      kind: 'unknown_file',
-      message: `Cannot read ${SCHEMA_TYPES_PATH} under ${repoRoot}.`,
-      hint: 'Regenerate the Supabase types (see supabase/CLAUDE.md) or run from the repo root.',
-    };
-  }
-
-  let container: TypeLiteralNode | InterfaceDeclaration | null =
-    sf.getInterface('Database') ?? null;
-  if (!container) {
-    const alias = sf.getTypeAlias('Database');
-    const typeNode = alias?.getTypeNode();
-    if (typeNode?.getKind() === SyntaxKind.TypeLiteral) {
-      container = typeNode as TypeLiteralNode;
-    }
-  }
-  if (!container) {
-    return {
-      kind: 'parse_error',
-      message: `No 'Database' type alias or interface found in ${SCHEMA_TYPES_PATH}.`,
-      hint: 'The file must be the generated Supabase types (supabase gen types).',
-    };
-  }
-
-  const publicLit = memberTypeLiteral(container, 'public');
-  const tablesLit = publicLit ? memberTypeLiteral(publicLit, 'Tables') : null;
-  if (!tablesLit) {
-    return {
-      kind: 'parse_error',
-      message: `Database['public']['Tables'] not found in ${SCHEMA_TYPES_PATH}.`,
-      hint: 'The file must be the generated Supabase types (supabase gen types).',
-    };
-  }
-
-  const schema = new Map<string, string[]>();
-  for (const member of tablesLit.getMembers()) {
-    if (member.getKind() !== SyntaxKind.PropertySignature) continue;
-    const tableProp = member as PropertySignature;
-    const tableLit = propTypeLiteral(tableProp);
-    const rowLit = tableLit ? memberTypeLiteral(tableLit, 'Row') : null;
-    if (!rowLit) continue;
-    const columns: string[] = [];
-    for (const colMember of rowLit.getMembers()) {
-      if (colMember.getKind() !== SyntaxKind.PropertySignature) continue;
-      columns.push(unquoteName((colMember as PropertySignature).getName()));
-    }
-    schema.set(unquoteName(tableProp.getName()), columns);
-  }
-
-  if (schema.size === 0) {
-    return {
-      kind: 'parse_error',
-      message: `Database['public']['Tables'] contains no tables with a Row shape in ${SCHEMA_TYPES_PATH}.`,
-      hint: 'The file must be the generated Supabase types (supabase gen types).',
-    };
-  }
-  return schema;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -644,6 +530,10 @@ function staticCaveats(
   unattributable: Map<string, number>,
   sidecars: LoadedSidecar[],
   unknownTables: Map<string, number>,
+  project: Project,
+  repoRoot: string,
+  args: Record<string, unknown>,
+  tableCount: number,
 ): SchemaCoverageCaveats {
   const sources = [...new Set(sidecars.map((s) => s.source))];
   const pythonMerged = sources.includes(PYTHON_EVIDENCE_SOURCE);
@@ -652,6 +542,7 @@ function staticCaveats(
       sidecars.length > 0
         ? `Verdicts combine TypeScript query-chain evidence (.from() chains in the tsconfig corpus) with merged external evidence sidecars: ${sources.join(', ')}. No SQL is parsed on the TypeScript side.`
         : 'Verdicts are based on TypeScript query-chain evidence only (.from() chains in the tsconfig corpus). No SQL is parsed.',
+    searched: QUERY_CAVEATS['schema-coverage'].searched,
     invisibleSurfaces: [
       'RPC function bodies (SQL)',
       'api-schema views',
@@ -659,6 +550,15 @@ function staticCaveats(
       // A merged sidecar makes its surface visible — the entry would be a lie.
       ...(pythonMerged ? [] : ['the Python pipeline (scripts/**/*.py)']),
     ],
+    corpus: corpusSummary(project, repoRoot, args),
+    // Unlike the shared histogram, this query's `summary` is built from every
+    // verdict row BEFORE the limit cap, so truncation never skews it.
+    summaryBasis: 'all-rows',
+    schemaValidation: {
+      validated: true,
+      source: SCHEMA_TYPES_PATH,
+      tableCount,
+    },
     unattributableSites: Object.fromEntries(
       [...unattributable.entries()].sort(([a], [b]) => (a < b ? -1 : 1)),
     ),
@@ -717,16 +617,20 @@ export async function schemaCoverage(
     );
   }
 
-  const schema = enumerateSchema(repoRoot);
-  if (!(schema instanceof Map)) {
+  // The schema IS this query's row set, so an unreadable/unparseable
+  // generated-types file is fatal here (column-reads/column-writes treat the
+  // same condition as "could not validate" and say so in their caveats).
+  const enumeration = loadSchema(repoRoot);
+  if (!enumeration.available) {
     return errorResponse(
       argsEcho,
-      schema.kind,
-      schema.message,
-      schema.hint,
+      enumeration.kind,
+      enumeration.message,
+      enumeration.hint,
       Date.now() - started,
     );
   }
+  const schema = enumeration.tables;
 
   if (args.table && !schema.has(args.table)) {
     return errorResponse(
@@ -892,7 +796,15 @@ export async function schemaCoverage(
     truncated,
     ...(truncated ? { totalEstimated: rows.length } : {}),
     durationMs: Date.now() - started,
-    caveats: staticCaveats(unattributable, sidecars, evidenceUnknownTables),
+    caveats: staticCaveats(
+      unattributable,
+      sidecars,
+      evidenceUnknownTables,
+      project,
+      repoRoot,
+      argsEcho,
+      schema.size,
+    ),
     summary,
   };
 }
