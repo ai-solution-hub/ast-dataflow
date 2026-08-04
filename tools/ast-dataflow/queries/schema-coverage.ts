@@ -68,7 +68,7 @@ import {
   selectContainsColumn,
 } from './column-reads';
 import { inspectWriteArg } from './column-writes';
-import { buildScopeMatcher } from './type-drift-detect';
+import { buildScopeMatcher } from '../scope';
 
 const DEFAULT_LIMIT = 2000;
 

@@ -239,6 +239,12 @@ export interface ReferencesArgs {
   symbol: string;
   limit?: number;
   kind?: ReferenceKind;
+  /**
+   * Comma-separated globs restricting which files' references are reported.
+   * The narrowing lever a truncated response points at (`caveats.narrowing`),
+   * alongside `kind`.
+   */
+  scope?: string;
 }
 
 export interface ReferenceResult extends BaseResult {

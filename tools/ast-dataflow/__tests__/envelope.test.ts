@@ -182,12 +182,58 @@ describe('envelope — truncation offers a narrowing path (G10)', () => {
 
   it('only advertises filters the query actually honours', () => {
     // A narrowing hint for an inert flag is worse than no hint: it sends the
-    // caller to re-run a query that will return exactly the same rows.
-    // `callers` and `dead-exports` declare a `scope` arg that no code reads.
-    for (const query of ['callers', 'dead-exports'] as const) {
-      const args = QUERY_CAVEATS[query].filters.map((f) => f.arg);
-      expect(args, `${query} must not advertise scope`).not.toContain('scope');
-    }
+    // caller to re-run a query that returns exactly the same rows.
+    // `dead-exports` still declares a `scope` arg that no code reads, so it
+    // must stay out of the narrowing block until it does something.
+    const args = QUERY_CAVEATS['dead-exports'].filters.map((f) => f.arg);
+    expect(args, 'dead-exports must not advertise scope').not.toContain(
+      'scope',
+    );
+  });
+
+  it('the scope lever it advertises for references really narrows the rows', async () => {
+    const { project, repoRoot } = projectAt(REFERENCES_FIXTURE);
+    const unscoped = await dispatch(
+      'references',
+      { symbol: 'target.ts:MY_CONSTANT' },
+      project,
+      repoRoot,
+    );
+    const scoped = await dispatch(
+      'references',
+      { symbol: 'target.ts:MY_CONSTANT', scope: 'case-read.ts' },
+      project,
+      repoRoot,
+    );
+
+    expect(unscoped.results.length).toBeGreaterThan(scoped.results.length);
+    expect(scoped.results.length).toBeGreaterThan(0);
+    expect(new Set(scoped.results.map((r) => r.file))).toEqual(
+      new Set(['case-read.ts']),
+    );
+    // The applied filter is echoed in the corpus block, so a later reader can
+    // see the answer was scoped rather than complete.
+    expect(scoped.caveats?.corpus.scope).toBe('case-read.ts');
+  });
+
+  it('the scope lever it advertises for callers really narrows the rows', async () => {
+    const fixture = resolve(__dirname, 'fixtures', '01-callers');
+    const { project, repoRoot } = projectAt(fixture);
+    const unscoped = await dispatch(
+      'callers',
+      { symbol: 'target.ts:target' },
+      project,
+      repoRoot,
+    );
+    const scoped = await dispatch(
+      'callers',
+      { symbol: 'target.ts:target', scope: 'no-such-dir/**' },
+      project,
+      repoRoot,
+    );
+
+    expect(unscoped.results.length).toBeGreaterThan(0);
+    expect(scoped.results).toEqual([]);
   });
 });
 

@@ -12,6 +12,7 @@ import {
   buildErrorResponse,
   AstResolverError,
 } from '../resolve';
+import { buildScopeMatcher } from '../scope';
 import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
@@ -150,6 +151,7 @@ export async function references(
   }
 
   const allRefs = resolved.declaration.findReferences();
+  const inScope = buildScopeMatcher(args.scope);
 
   const rows: ReferenceResult[] = [];
 
@@ -157,6 +159,8 @@ export async function references(
     for (const ref of refSym.getReferences()) {
       const node = ref.getNode();
       const sf = node.getSourceFile();
+      const relPath = toRepoRelative(repoRoot, sf.getFilePath());
+      if (!inScope(relPath)) continue;
       // isDefinition() is typed boolean | undefined; absent means "not a
       // definition site", so default undefined to false.
       const isDefinition = ref.isDefinition() ?? false;
@@ -171,7 +175,7 @@ export async function references(
       const lineCol = sf.getLineAndColumnAtPos(node.getStart());
 
       rows.push({
-        file: toRepoRelative(repoRoot, sf.getFilePath()),
+        file: relPath,
         line: lineCol.line,
         column: lineCol.column,
         confidence: 'exact',

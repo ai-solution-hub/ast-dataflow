@@ -121,7 +121,12 @@ function printCatalogue(): void {
         queries: [
           {
             name: 'callers',
-            args: ['--symbol <file:name>', '--limit N', '--pretty'],
+            args: [
+              '--symbol <file:name>',
+              '[--scope GLOB[,GLOB...]]',
+              '--limit N',
+              '--pretty',
+            ],
             example:
               'bun run ast-dataflow callers --symbol lib/supabase/safe.ts:sb',
           },
@@ -147,6 +152,7 @@ function printCatalogue(): void {
             args: [
               '--symbol <file:name>',
               `--kind ${REFERENCE_KINDS.join('|')}`,
+              '[--scope GLOB[,GLOB...]]',
               '--limit N',
               '--json',
               '--pretty',
@@ -428,9 +434,18 @@ async function main(): Promise<void> {
         process.exit(2);
       }
       const limit = parseLimit(parsed.flags.limit);
+      const scopeArg = parsed.flags.scope;
+      if (scopeArg !== undefined && typeof scopeArg !== 'string') {
+        console.error('--scope requires comma-separated glob patterns');
+        process.exit(2);
+      }
       const response = await dispatch(
         'callers',
-        { symbol, ...(limit ? { limit } : {}) },
+        {
+          symbol,
+          ...(limit ? { limit } : {}),
+          ...(scopeArg ? { scope: scopeArg } : {}),
+        },
         project,
         repoRoot,
       );
@@ -505,9 +520,19 @@ async function main(): Promise<void> {
         );
         process.exit(2);
       }
+      const scopeArg = parsed.flags.scope;
+      if (scopeArg !== undefined && typeof scopeArg !== 'string') {
+        console.error('--scope requires comma-separated glob patterns');
+        process.exit(2);
+      }
       const response = await dispatch(
         'references',
-        { symbol, ...(limit ? { limit } : {}), ...(kind ? { kind } : {}) },
+        {
+          symbol,
+          ...(limit ? { limit } : {}),
+          ...(kind ? { kind } : {}),
+          ...(scopeArg ? { scope: scopeArg } : {}),
+        },
         project,
         repoRoot,
       );

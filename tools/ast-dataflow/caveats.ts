@@ -102,7 +102,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
       'runtime wiring that never names the symbol (DI containers, JSON/route config)',
       CORPUS_BLIND,
     ],
-    filters: [LIMIT_FILTER],
+    filters: [SCOPE_FILTER, LIMIT_FILTER],
     bucketKey: 'resolution',
   },
   callees: {
@@ -164,6 +164,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
         value: 'read|write|typeReference|jsxComponent|reexport|typeOnly',
         effect: 'restrict to one reference kind',
       },
+      SCOPE_FILTER,
       LIMIT_FILTER,
     ],
     bucketKey: 'kind',

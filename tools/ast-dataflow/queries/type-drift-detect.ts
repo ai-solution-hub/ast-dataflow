@@ -26,6 +26,7 @@ import type {
   SourceFile,
 } from 'ts-morph';
 import { SyntaxKind } from 'ts-morph';
+import { buildScopeMatcher } from '../scope';
 import type {
   TypeDriftResult,
   TypeDriftDetectArgs,
@@ -90,35 +91,6 @@ function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
     }
   }
   return [];
-}
-
-// ---------------------------------------------------------------------------
-// Scope glob matcher
-//
-// `--scope` accepts comma-separated glob patterns (e.g. 'app/api/**,lib/**').
-// Only files matching the globs are inspected for fetcher/route call sites;
-// interface declarations are always scanned regardless of scope.
-// Supported syntax: `**` (any path segments), `*` (within one segment).
-// Exported for schema-coverage, which shares the same --scope contract.
-// ---------------------------------------------------------------------------
-export function buildScopeMatcher(
-  scope: string | undefined,
-): (rel: string) => boolean {
-  if (!scope) return () => true;
-  const regexes = scope
-    .split(',')
-    .map((g) => g.trim())
-    .filter(Boolean)
-    .map((glob) => {
-      const source = glob
-        .replace(/[.+?^${}()|[\]\\]/g, '\\$&')
-        .replace(/\*\*\//g, '(?:[^/]+/)*')
-        .replace(/\*\*/g, '.*')
-        .replace(/(?<![.\])])\*/g, '[^/]*');
-      return new RegExp(`^${source}$`);
-    });
-  if (regexes.length === 0) return () => true;
-  return (rel: string) => regexes.some((r) => r.test(rel));
 }
 
 // ---------------------------------------------------------------------------
