@@ -6,6 +6,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
+import { lookupTableColumn } from '../schema';
 import { truncateSpatial } from '../truncate';
 import {
   clientBindingHasExplicitTypeArgs,
@@ -166,6 +167,22 @@ export async function columnReads(
 
   const limit = args.limit ?? DEFAULT_LIMIT;
   const excludeTests = args.excludeTests ?? false;
+
+  // A typo used to return a silent `[]`, indistinguishable from a real zero.
+  // When the target repo ships generated Postgres types, the table and column
+  // must exist in them; when it does not, the walk proceeds and the caveats
+  // record that the arguments went unvalidated (see caveats.ts).
+  const lookup = lookupTableColumn(repoRoot, args.table, args.column);
+  if (lookup.failure) {
+    return buildErrorResponse<ColumnReadResult>(
+      'column-reads',
+      { ...args, limit },
+      lookup.failure.kind,
+      lookup.failure.message,
+      lookup.failure.hint,
+      Date.now() - started,
+    );
+  }
 
   const rows: ColumnReadResult[] = [];
 

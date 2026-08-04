@@ -6,6 +6,7 @@ import type {
   QueryResponse,
 } from '../types';
 import { buildErrorResponse, isTestFilePath, toRepoRelative } from '../resolve';
+import { lookupTableColumn } from '../schema';
 import { truncateSpatial } from '../truncate';
 import {
   collectChain,
@@ -203,6 +204,25 @@ export async function columnWrites(
 
   const limit = args.limit ?? DEFAULT_LIMIT;
   const excludeTests = args.excludeTests ?? false;
+
+  // Loud unknown table/column, for a reason sharper than symmetry with
+  // column-reads: every row this query emits is stamped `columnPath:
+  // args.column`, so for a column that does not exist the indirect paths
+  // (spread-carried, untraceable payload) would report rows attributing a
+  // write to a fabricated column name. Rejecting the argument up front is
+  // what makes that impossible. Where no generated types exist the walk still
+  // runs, and the caveats record that nothing was validated.
+  const lookup = lookupTableColumn(repoRoot, args.table, args.column);
+  if (lookup.failure) {
+    return buildErrorResponse<ColumnWriteResult>(
+      'column-writes',
+      { ...args, limit },
+      lookup.failure.kind,
+      lookup.failure.message,
+      lookup.failure.hint,
+      Date.now() - started,
+    );
+  }
 
   const rows: ColumnWriteResult[] = [];
 

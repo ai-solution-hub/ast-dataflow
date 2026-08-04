@@ -1,4 +1,5 @@
 import type { Project } from 'ts-morph';
+import { buildEnvelope } from './caveats';
 import { callees } from './queries/callees';
 import { callers } from './queries/callers';
 import { columnReads } from './queries/column-reads';
@@ -33,6 +34,7 @@ import type {
   FlowTraceRow,
   ImporterResult,
   ImportersArgs,
+  QueryCaveats,
   QueryResponse,
   ReexportChainArgs,
   ReexportChainResult,
@@ -185,10 +187,59 @@ async function dispatchInner(
 }
 
 /**
+ * The response fields the shared envelope owns, viewed structurally so one
+ * attach step covers both QueryResponse<R> and SchemaCoverageResponse.
+ */
+interface EnvelopeShape {
+  args: Record<string, unknown>;
+  results: unknown[];
+  truncated: boolean;
+  totalEstimated?: number;
+  caveats?: QueryCaveats;
+  summary?: Record<string, number>;
+}
+
+/**
+ * Attach the uniform envelope (caveats, bucket histogram, truncation
+ * narrowing) to a query's raw response.
+ *
+ * Done here rather than in each query so the two surfaces cannot disagree and
+ * no future query can ship without it: `QUERY_CAVEATS` is keyed by QueryName,
+ * so adding a name to QUERY_NAMES without describing what it searches fails
+ * the type check.
+ *
+ * A query that already built richer caveats of its own (schema-coverage) wins
+ * on every field it set; the shared block only fills the gaps.
+ */
+function attachEnvelope<Q extends QueryName>(
+  query: Q,
+  response: QueryResponseMap[Q],
+  project: Project,
+  repoRoot: string,
+): QueryResponseMap[Q] {
+  const shaped = response as unknown as EnvelopeShape;
+  const envelope = buildEnvelope(
+    query,
+    shaped.args,
+    shaped.results,
+    shaped.truncated,
+    shaped.totalEstimated,
+    project,
+    repoRoot,
+  );
+  const summary = shaped.summary ?? envelope.summary;
+  return {
+    ...response,
+    caveats: { ...envelope.caveats, ...(shaped.caveats ?? {}) },
+    ...(summary ? { summary } : {}),
+  };
+}
+
+/**
  * Route one query invocation to its implementation. Args arrive already
  * parsed (the CLI keeps its flag parsing; the MCP server passes the tool
- * call's `args` object straight through) — dispatch owns only the
- * query-name → query-function mapping.
+ * call's `args` object straight through) — dispatch owns the
+ * query-name → query-function mapping and the shared response envelope.
  */
 export async function dispatch<Q extends QueryName>(
   query: Q,
@@ -196,10 +247,11 @@ export async function dispatch<Q extends QueryName>(
   project: Project,
   repoRoot: string,
 ): Promise<QueryResponseMap[Q]> {
-  return (await dispatchInner(
+  const response = (await dispatchInner(
     query,
     args,
     project,
     repoRoot,
   )) as QueryResponseMap[Q];
+  return attachEnvelope(query, response, project, repoRoot);
 }

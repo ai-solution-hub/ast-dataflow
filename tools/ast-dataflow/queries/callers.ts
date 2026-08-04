@@ -12,6 +12,7 @@ import {
   buildErrorResponse,
   AstResolverError,
 } from '../resolve';
+import { buildScopeMatcher } from '../scope';
 import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
@@ -70,6 +71,9 @@ export async function callers(
   }
 
   const references = resolved.declaration.findReferences();
+  // `scope` has been in CallersArgs since the query was written but nothing
+  // read it, so narrowing a large caller set was limited to raising --limit.
+  const inScope = buildScopeMatcher(args.scope);
 
   const rows: CallSiteResult[] = [];
 
@@ -82,13 +86,16 @@ export async function callers(
       if (!callExpr) continue;
 
       const sf = node.getSourceFile();
+      const relPath = toRepoRelative(repoRoot, sf.getFilePath());
+      if (!inScope(relPath)) continue;
+
       const lineCol = sf.getLineAndColumnAtPos(node.getStart());
       const { resolution, importAlias } = classifyResolution(
         node,
         resolved.declarationName,
       );
       rows.push({
-        file: toRepoRelative(repoRoot, sf.getFilePath()),
+        file: relPath,
         line: lineCol.line,
         column: lineCol.column,
         confidence: 'exact',

@@ -70,7 +70,12 @@ const TOOLS = [
       'column-reads/column-writes: {table, column}; type-evolution: {type, property}; enum-uses: {enum, member?}; ' +
       'string-literal-uses: {value}; fixture-uses: {needle}; reexport-chain: {symbol, from?}; ' +
       'flow-trace: {originFile, originLine, originColumn}; plus optional limit/excludeTests/scope where the CLI accepts them). ' +
-      'Responses add meta: {refreshedFiles, addedFiles, removedFiles, staleFiles} — the per-call staleness sweep; ' +
+      'Every response carries caveats: {scan, searched, invisibleSurfaces, corpus, summaryBasis, narrowing?, schemaValidation?} ' +
+      'plus a summary histogram — read them before treating a zero as absence. `searched` lists the AST shapes actually matched, ' +
+      '`invisibleSurfaces` what the scan structurally cannot see, and `corpus` the file count and tsconfig the answer covers. ' +
+      'On column-reads/column-writes, schemaValidation.validated:false means the table and column were never checked to exist. ' +
+      'When truncated is true, caveats.narrowing names the filters that would narrow the query and the limit that would show the rest. ' +
+      'Responses also add meta: {refreshedFiles, addedFiles, removedFiles, staleFiles} — the per-call staleness sweep; ' +
       'a non-empty staleFiles means those files could not be refreshed and answers may be stale for them.',
     inputSchema: {
       type: 'object',
