@@ -880,6 +880,13 @@ export function renderSchemaCoverageReport(
     lines.push('');
     lines.push(`- ${caveats.scan}`);
     lines.push(
+      `- Corpus: ${caveats.corpus.fileCount} source file(s) enumerated by \`${caveats.corpus.tsconfigPath}\`` +
+        (caveats.corpus.scope
+          ? `, scoped to \`${caveats.corpus.scope}\``
+          : '') +
+        '.',
+    );
+    lines.push(
       `- Invisible to this scan: ${caveats.invisibleSurfaces.join('; ')}.`,
     );
     if (caveats.mergedEvidence && caveats.mergedEvidence.length > 0) {

@@ -10,6 +10,7 @@ import { describe, expect, it } from 'vitest';
 import { createProject } from '@/tools/ast-dataflow';
 import { QUERY_CAVEATS } from '@/tools/ast-dataflow/caveats';
 import { QUERY_NAMES, dispatch } from '@/tools/ast-dataflow/dispatch';
+import { createWarmState, warmDispatch } from '@/tools/ast-dataflow/staleness';
 
 const REFERENCES_FIXTURE = resolve(__dirname, 'fixtures', '06-references');
 const COLUMN_WRITES_FIXTURE = resolve(
@@ -234,6 +235,23 @@ describe('envelope — truncation offers a narrowing path (G10)', () => {
 
     expect(unscoped.results.length).toBeGreaterThan(0);
     expect(scoped.results).toEqual([]);
+  });
+});
+
+describe('envelope — the warm MCP path carries it too', () => {
+  it('warmDispatch responses carry the same caveats as the CLI path', async () => {
+    // CLI/MCP parity is the reason the envelope is attached in dispatch; this
+    // measures it on the warm path rather than trusting the call graph.
+    const state = createWarmState({ repoRoot: REFERENCES_FIXTURE });
+    const response = await warmDispatch(state, 'references', {
+      symbol: 'target.ts:MY_CONSTANT',
+    });
+
+    expect(response.caveats?.scan.length).toBeGreaterThan(0);
+    expect(response.caveats?.corpus.fileCount).toBeGreaterThan(0);
+    expect(response.summary).toBeDefined();
+    // The staleness meta the warm path adds is still there.
+    expect(response.meta.staleFiles).toEqual([]);
   });
 });
 
