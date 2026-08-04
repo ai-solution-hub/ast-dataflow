@@ -132,11 +132,20 @@ bun run ast-dataflow-py -- schema-uses --root path/to/pipeline
 SQL column extraction requires `sqlglot` (`pip install sqlglot`); without it, SQL sites
 degrade to indirect confidence and the response says so.
 
+Its output is an evidence sidecar that `schema-coverage --evidence` merges, so a column
+written only from Python stops looking dead. Any tool in any language can produce one —
+the contract, the confidence rules and how to write a producer are in
+[`docs/SIDECAR.md`](./docs/SIDECAR.md).
+
 ## Known caveats (measured, binding until the named gap lands)
 
 Efficacy trials against a real production repo produced a clear verdict: this is a
 **precision instrument, not an inventory instrument**. Cleared for "is this specific thing
 still there?"; not cleared for "how many sites are there?"
+
+The measurements, the full ranked gap list and what each verdict does and does not cover
+are in [`docs/gap-register.md`](./docs/gap-register.md); priorities are in
+[`ROADMAP.md`](./ROADMAP.md).
 
 1. **Never quote a `column-writes` count.** Column attribution is table-level in
    untyped-client repos: 18.5 % pooled false positives over 65 hand-checked sites; ~44 %
