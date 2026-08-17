@@ -31,6 +31,7 @@ defines the analysis corpus):
 bunx ast-dataflow                       # print the query catalogue
 bunx ast-dataflow callers --symbol lib/db.ts:getClient
 bunx ast-dataflow column-reads --table users --column email
+bunx ast-dataflow dead-exports --scope 'lib/**' --exclude-tests
 bunx ast-dataflow schema-coverage --evidence .ast-dataflow/evidence.json
 ```
 
@@ -51,6 +52,17 @@ the project load (~6 s cold, ~100–200 ms warm). Register in your `.mcp.json`:
 ```
 
 The server binds its repo root to the working directory it is spawned in.
+
+Two tools are exposed, both annotated read-only: `ast_dataflow` (one call per query, same
+catalogue and envelope as the CLI) and `corpus_info`. Arguments are validated strictly
+against the chosen query: an unknown or misspelled key — `limmit`, or a flag another query
+owns — is rejected with an error naming it and the valid keys, never silently ignored and
+echoed back as honoured. The `type-drift-detect` flags `--ci`, `--update-baseline`,
+`--json` and `--pretty` are CLI presentation/baseline modes and are likewise rejected over
+MCP (nothing the server does writes a file). Responses carry the JSON envelope both as
+text and as `structuredContent` matching the advertised `outputSchema`, and any response
+whose envelope carries `error` — including `path_not_allowed`, `unknown_table`,
+`unknown_column` — is flagged `isError` with the envelope intact.
 
 ### Path confinement
 
