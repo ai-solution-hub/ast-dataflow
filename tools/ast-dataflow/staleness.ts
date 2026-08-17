@@ -32,7 +32,7 @@ export interface WarmState {
 
 /**
  * Per-call staleness accounting, attached to every warm response as `meta`
- * (stale-loud, PRODUCT inv 22). All paths are repo-root-relative POSIX.
+ * (stale-loud: a failed refresh is reported, never silent). All paths are repo-root-relative POSIX.
  */
 export interface StalenessMeta {
   refreshedFiles: string[];

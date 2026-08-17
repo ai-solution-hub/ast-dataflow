@@ -1,14 +1,14 @@
 /**
- * type-drift-detect query (PRODUCT.md WP-D, R-WP17)
+ * type-drift-detect query
  *
- * Classifies every response-interface candidate in the KH codebase into one
+ * Classifies every response-interface candidate in the target codebase into one
  * of four buckets:
  *   enforced    — symmetric usage (fetcher generic + route return-type)
  *   fetcher-only — fetcher uses the type but no route annotates it
  *   route-only  — route annotates but no fetcher uses it
  *   unused      — declared but used in neither position
  *
- * Algorithm summary (from TECH.md §WP-D):
+ * Algorithm summary:
  *   1. Enumerate candidate interfaces from types/ *.ts, lib/query/fetchers.ts,
  *      and app/api/ route files.
  *   2. For each candidate, classify its references as fetcher uses or route uses.
@@ -39,7 +39,7 @@ const DEFAULT_LIMIT = 500;
 
 // ---------------------------------------------------------------------------
 // Candidate regex — matches interface/type-alias names that are response
-// types per the default heuristic (PRODUCT.md D-15).
+// types per the default heuristic.
 // ---------------------------------------------------------------------------
 const DEFAULT_CANDIDATE_REGEX = /(Response|Payload|Result|Body)$/;
 
@@ -56,41 +56,45 @@ interface AllowlistEntry {
 //
 // Primary location is the repo-root dotfile (same convention as
 // `.type-drift-baseline.json`). The legacy `docs/specs/…` path is kept as a
-// fallback — the spec tree moved to the private docs-site (ID-68), so the
-// legacy path no longer exists in this repo and previously made the allowlist
-// silently dead.
+// fallback — that spec tree no longer exists in this repo, and when it was
+// the only location it made the allowlist silently dead.
 // ---------------------------------------------------------------------------
 const ALLOWLIST_PATHS = [
   ['.type-drift-allowlist.json'],
   [
     'docs',
     'specs',
-    'id-16-ast-dataflow-tool',
+    'ast-dataflow-tool',
     'type-safety-pipeline',
     'allowlist.json',
   ],
 ] as const;
 
-function loadAllowlist(repoRoot: string): AllowlistEntry[] | null {
+function loadAllowlist(
+  repoRoot: string,
+): { entries: AllowlistEntry[] } | { badJsonPath: string } {
   for (const segments of ALLOWLIST_PATHS) {
     const path = join(repoRoot, ...segments);
     if (!existsSync(path)) continue;
     try {
       const raw = readFileSync(path, 'utf8');
       const parsed = JSON.parse(raw);
-      if (!Array.isArray(parsed)) return [];
-      return parsed.filter(
-        (e): e is AllowlistEntry =>
-          typeof e === 'object' &&
-          e !== null &&
-          typeof e.interface === 'string' &&
-          typeof e.reason === 'string',
-      );
+      if (!Array.isArray(parsed)) return { entries: [] };
+      return {
+        entries: parsed.filter(
+          (e): e is AllowlistEntry =>
+            typeof e === 'object' &&
+            e !== null &&
+            typeof e.interface === 'string' &&
+            typeof e.reason === 'string',
+        ),
+      };
     } catch {
-      return null;
+      // Report the specific file that failed to parse so the hint can name it.
+      return { badJsonPath: path };
     }
   }
-  return [];
+  return { entries: [] };
 }
 
 // ---------------------------------------------------------------------------
@@ -429,10 +433,12 @@ export async function typeDriftDetect(
     }
   }
 
-  // Load allowlist (null = malformed JSON)
+  // Load allowlist (badJsonPath = the file that failed to parse)
   const rawAllowlist = loadAllowlist(repoRoot);
-  const allowlist: AllowlistEntry[] = rawAllowlist ?? [];
-  const allowlistBadJson = rawAllowlist === null;
+  const allowlist: AllowlistEntry[] =
+    'entries' in rawAllowlist ? rawAllowlist.entries : [];
+  const allowlistBadJsonPath =
+    'badJsonPath' in rawAllowlist ? rawAllowlist.badJsonPath : undefined;
 
   const allowlistSet = new Set(allowlist.map((e) => e.interface));
   const allowlistReasons = new Map(
@@ -441,7 +447,7 @@ export async function typeDriftDetect(
 
   const inScope = buildScopeMatcher(args.scope);
 
-  // D-25: Check for absent or empty fetchers surface.
+  // Check for absent or empty fetchers surface.
   // Short-circuit with a single informational row when the project contains
   // zero fetchJson / mutationFetchJson calls anywhere. (Previously only
   // lib/query/fetchers.ts was checked, which returned a false "no fetchers"
@@ -683,7 +689,7 @@ export async function typeDriftDetect(
       return true;
     });
 
-    // Classify — most-favourable wins (D-10)
+    // Classify — most-favourable wins
     let classification: TypeDriftResult['classification'];
     if (fetcherUses.length > 0 && routeUses.length > 0) {
       classification = 'enforced';
@@ -695,7 +701,7 @@ export async function typeDriftDetect(
       classification = 'unused';
     }
 
-    // testOnly flag (D-29)
+    // testOnly flag
     const testOnly =
       classification === 'unused' &&
       testOnlyUseCount > 0 &&
@@ -748,7 +754,7 @@ export async function typeDriftDetect(
     });
   }
 
-  // Spatial truncation first (PRODUCT inv 14), then the classification-major
+  // Spatial truncation first, then the classification-major
   // sort re-applied AFTER truncation — the stable sort preserves the
   // (file, line, column) order within each class, keeping the Markdown
   // report sections intact.
@@ -764,7 +770,7 @@ export async function typeDriftDetect(
   };
   results.sort((a, b) => ORDER[a.classification] - ORDER[b.classification]);
 
-  // CI mode: diff against baseline (D-19)
+  // CI mode: diff against baseline
   let newSinceBaseline: string[] | undefined;
   if (args.ci) {
     const baseline = loadBaseline(repoRoot);
@@ -793,12 +799,12 @@ export async function typeDriftDetect(
     truncated: t.truncated,
     totalEstimated: t.totalEstimated,
     durationMs: Date.now() - started,
-    ...(allowlistBadJson
+    ...(allowlistBadJsonPath
       ? {
           error: {
             kind: 'parse_error' as const,
             message: 'Allowlist JSON is malformed — allowlist ignored.',
-            hint: `Fix ${join(repoRoot, 'docs', 'specs', 'id-16-ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json')}`,
+            hint: `Fix ${allowlistBadJsonPath}`,
           },
         }
       : {}),

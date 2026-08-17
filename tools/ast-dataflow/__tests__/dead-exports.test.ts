@@ -6,7 +6,7 @@ import { deadExports, createProject } from '@/tools/ast-dataflow';
  * dead-exports query — Vitest suite
  *
  * Ground-truth fixture set under fixtures/09-dead-exports/.
- * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
+ * Tests verify real behaviour:
  *   - Assertions are on the result shape and counts (not on call-chain internals).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) + find() antipattern.
  *   - Test titles read like product specs (what the user observes), not implementation.
@@ -231,7 +231,7 @@ describe('dead-exports — fixture 6: export only referenced within its own file
 });
 
 // ---------------------------------------------------------------------------
-// Cross-cutting: response shape invariants (PRODUCT.md inv. 13, 15, 16)
+// Cross-cutting: response shape invariants
 // ---------------------------------------------------------------------------
 describe('dead-exports — response shape invariants', () => {
   it('result rows carry required BaseResult fields with 1-based line/column', async () => {
@@ -245,10 +245,10 @@ describe('dead-exports — response shape invariants', () => {
     expect(response.error).toBeUndefined();
     const row = response.results[0];
     expect(row).toBeDefined();
-    // line and column must be 1-based (PRODUCT.md P-13).
+    // line and column must be 1-based.
     expect(row.line).toBeGreaterThanOrEqual(1);
     expect(row.column).toBeGreaterThanOrEqual(1);
-    // file must be a relative POSIX path (PRODUCT.md P-16) — no absolute paths.
+    // file must be a relative POSIX path — no absolute paths.
     expect(row.file).not.toMatch(/^[/\\]/);
     // confidence must be 'exact' for dead-exports (always ts-morph resolved).
     expect(row.confidence).toBe('exact');

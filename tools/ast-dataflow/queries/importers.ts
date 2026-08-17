@@ -22,8 +22,8 @@ const DEFAULT_LIMIT = 200;
  *
  * Each paths entry has the form `"alias/*": ["./target/*"]`. We collect the
  * leading segment before the first `/` (e.g. `@`, `~`, `#`) so the suffix
- * matcher can strip any of them. Falls back to `['@']` (the KH convention)
- * when no paths are declared.
+ * matcher can strip any of them. Falls back to `['@/']` (the most common
+ * convention) when no paths are declared.
  *
  * We intentionally limit to single-character-prefix aliases (beginning with
  * a non-alphanumeric character) to avoid accidentally stripping genuine
@@ -33,7 +33,7 @@ function extractAliasPrefixes(project: Project): string[] {
   const opts = project.getCompilerOptions();
   const paths = opts.paths;
   if (!paths || Object.keys(paths).length === 0) {
-    // No tsconfig paths declared — fall back to KH's @/ convention.
+    // No tsconfig paths declared — fall back to the common @/ convention.
     return ['@/'];
   }
 
@@ -58,8 +58,8 @@ function extractAliasPrefixes(project: Project): string[] {
  * suffix matching against the resolved absolute path works regardless of
  * which alias convention the project uses.
  *
- * Examples (with KH aliases `@/` and a Vite project alias `~/`):
- *   '@/lib/ai/change-reports'   → 'lib/ai/change-reports'
+ * Examples (with a `@/` alias and a Vite project alias `~/`):
+ *   '@/lib/surveys/survey-queries'   → 'lib/surveys/survey-queries'
  *   '~/utils/format'    → 'utils/format'
  *   'src/utils/format'  → 'src/utils/format'  (no prefix to strip)
  */
@@ -79,7 +79,7 @@ function stripAliasPrefix(specifier: string, aliasPrefixes: string[]): string {
  * repo-relative file path (with any alias prefix stripped) and look it up in
  * the project, appending extensions and index files the way the module
  * resolver would. This is a handful of O(1) lookups and covers repo-relative
- * inputs plus KH-style aliases whose mapping is the repo root (`@/*` → `./*`).
+ * inputs plus aliases whose mapping is the repo root (`@/*` → `./*`).
  *
  * Only when that misses do we fall back to walking every source file's import
  * declarations: the first one whose getModuleSpecifierSourceFile() returns a
@@ -88,11 +88,11 @@ function stripAliasPrefix(specifier: string, aliasPrefixes: string[]): string {
  * covers alias forms whose mapping differs from the stripped path (e.g. a
  * Vite `~/*` → `./src/*`) and relative-specifier inputs, without
  * re-implementing the compiler's module resolver — but it costs a module
- * resolution per candidate import, so it must stay the fallback (P-19).
+ * resolution per candidate import, so it must stay the fallback.
  *
  * The alias strip uses the tsconfig `compilerOptions.paths` to discover which
- * alias prefixes are active (e.g. `@/` for KH, `~/` for Vite projects).
- * Falls back to stripping `@/` when no paths are declared.
+ * alias prefixes are active (e.g. `@/` in Next.js-style repos, `~/` in Vite
+ * projects). Falls back to stripping `@/` when no paths are declared.
  */
 function resolveTargetFilePath(
   modulePath: string,
@@ -228,7 +228,7 @@ function collectBodyUsageNames(sf: SourceFile): Set<string> {
  * Syntactic same-file scan: one forEachDescendant pass over the file collects
  * the identifier names in usage positions; each named import's local binding
  * name is then a Set lookup. Replaces a per-name language-service
- * findReferencesAsNodes() pass that dominated query time (P-19). The scan is
+ * findReferencesAsNodes() pass that dominated query time. The scan is
  * scope-blind — a same-named local declared in an inner scope counts as a
  * usage — which is an acceptable over-approximation for unused detection.
  *
@@ -266,7 +266,7 @@ export async function importers(
       { ...args },
       'parse_error',
       'modulePath must be a non-empty string.',
-      "Example: '@/lib/ai/change-reports' or 'lib/ai/change-reports.ts'.",
+      "Example: '@/lib/surveys/survey-queries' or 'lib/surveys/survey-queries.ts'.",
       Date.now() - started,
     );
   }

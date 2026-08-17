@@ -1,7 +1,7 @@
 import type { BaseResult } from './types';
 
 /**
- * Spatial-coverage truncation (PRODUCT.md invariant 14).
+ * Spatial-coverage truncation.
  *
  * Result-set queries collect ALL hits, then truncate here: distinct files
  * come first, multiple hits per file thin last. Output order is a total

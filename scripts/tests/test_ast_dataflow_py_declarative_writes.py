@@ -236,8 +236,7 @@ class TestColumnWritesIntegration:
         assert rows == []
 
 
-# The canonical-repo corpus pins that used to live here (TestRealCorpus
-# flow.py mount topology; the l_records const-SQL visibility sweep) moved to
+# The real-corpus pins that used to live here (TestRealCorpus) moved to
 # the consuming repo when this tool was extracted — they assert THAT repo's
 # pipeline write surface, not this tool's contract, and they need its source
 # tree as a corpus.

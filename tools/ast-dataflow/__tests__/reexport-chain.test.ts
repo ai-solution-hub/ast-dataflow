@@ -6,7 +6,7 @@ import { reexportChain, createProject } from '@/tools/ast-dataflow';
  * reexport-chain query — Vitest suite
  *
  * Ground-truth fixture set under fixtures/10-reexport-chain/.
- * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
+ * Tests verify real behaviour:
  *   - Assertions are on the result shape and counts (not on call-chain internals).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) + find() antipattern.
  *   - Test titles read like product specs (what the user observes), not implementation.
@@ -323,7 +323,7 @@ describe('reexport-chain — scenario 5: default re-export chain works', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Cross-cutting: response shape invariants (PRODUCT.md inv. 13, 15, 16, 29)
+// Cross-cutting: response shape invariants
 // ---------------------------------------------------------------------------
 describe('reexport-chain — response shape invariants', () => {
   it('result rows carry required BaseResult fields with 1-based line/column', async () => {
@@ -336,10 +336,10 @@ describe('reexport-chain — response shape invariants', () => {
 
     expect(response.error).toBeUndefined();
     for (const row of response.results) {
-      // line and column must be 1-based (PRODUCT.md P-13).
+      // line and column must be 1-based.
       expect(row.line).toBeGreaterThanOrEqual(1);
       expect(row.column).toBeGreaterThanOrEqual(1);
-      // file must be a relative POSIX path (PRODUCT.md P-16) — no absolute paths.
+      // file must be a relative POSIX path — no absolute paths.
       expect(row.file).not.toMatch(/^[/\\]/);
       // confidence must be 'exact' for reexport-chain.
       expect(row.confidence).toBe('exact');

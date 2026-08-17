@@ -1,4 +1,4 @@
-// EXEMPT from spatial-coverage truncation (truncate.ts / PRODUCT inv 14):
+// EXEMPT from spatial-coverage truncation (truncate.ts):
 // rows are ordered hops of a trace path, so truncation must stay
 // traversal-ordered — a spatial (file, line, column) reorder would break the
 // hop sequence that consumers (and the perf tests) rely on.
@@ -278,7 +278,7 @@ const MUTATION_METHODS: ReadonlySet<string> = new Set([
 /**
  * Supabase chain terminal mutating method names for `apiCall` sink detection.
  *
- * OQ-FT2 LOCK: the hop is emitted at the TERMINAL mutating call (e.g.
+ * Locked contract: the hop is emitted at the TERMINAL mutating call (e.g.
  * `.insert()`), not at the chain root (`.from()`). This is consistent with
  * `column-writes.ts` which records the mutation method, not `.from()`.
  *
@@ -363,7 +363,7 @@ function isMutationReceiver(
  * Return true if `callExpr` is a Supabase chain terminal mutating call
  * (`.insert()`, `.update()`, `.upsert()`, `.delete()`, `.rpc()`).
  *
- * OQ-FT2: we check only the immediate method name; the value flowing into
+ * Note: we check only the immediate method name; the value flowing into
  * it is confirmed by the caller checking that `useNode` is an argument.
  */
 function isSupabaseSinkCall(
@@ -390,7 +390,7 @@ function isFsWriteCall(callExpr: import('ts-morph').CallExpression): boolean {
  * value is being passed as, attempt to resolve the callee declaration and
  * descend into the matching ParameterDeclaration.
  *
- * OQ-FT3: `enclosing` on the descended hop reports the callee's enclosing
+ * Contract: `enclosing` on the descended hop reports the callee's enclosing
  * function (NOT the caller).
  *
  * If resolution fails, no additional hop is emitted (the argument hop already
@@ -509,7 +509,7 @@ function descendIntoCallee(
     : 'indirect';
 
   // Emit the descent hop: kind 'argument', file = callee's file.
-  // OQ-FT3: enclosing is the callee's enclosing function.
+  // Contract: enclosing is the callee's enclosing function.
   state.totalEstimated++;
   const paramHopNum = ++state.hopCounter;
   state.visited.add(paramKey);
@@ -913,12 +913,12 @@ function walkForward(
     }
 
     // -------------------------------------------------------------------
-    // Nested object-literal argument hop (Wave 5 procurementIds fix):
+    // Nested object-literal argument hop:
     // value passed as a property inside an object literal argument.
     //
     // Two patterns handled:
-    //   PropertyAssignment:         rpc('fn', { p_project_ids: procurementIds })
-    //   ShorthandPropertyAssignment: rpc('fn', { procurementIds })
+    //   PropertyAssignment:         rpc('fn', { p_project_ids: projectIds })
+    //   ShorthandPropertyAssignment: rpc('fn', { projectIds })
     //
     // Chain to detect:
     //   Identifier → PropertyAssignment/ShorthandPropertyAssignment
@@ -1059,7 +1059,7 @@ function walkForward(
       if (state.visited.has(key)) continue;
 
       // --- apiCall sink (WP2) ---
-      // OQ-FT2: hop emitted at the terminal mutating call (e.g. .insert()),
+      // Contract: hop emitted at the terminal mutating call (e.g. .insert()),
       // which is the CallExpression that directly receives the identifier as argument.
       if (isSupabaseSinkCall(callExpr)) {
         state.totalEstimated++;
@@ -1128,7 +1128,7 @@ function walkForward(
       // ---------------------------------------------------------------------------
       // Inter-function descent (WP3): when interFunction is enabled, resolve
       // the callee's declaration and continue tracing from the matching parameter.
-      // OQ-FT3 LOCK: enclosing on the descended hop is the callee's enclosing
+      // Locked contract: enclosing on the descended hop is the callee's enclosing
       // function, NOT the upstream caller.
       // ---------------------------------------------------------------------------
       if (state.interFunction) {
@@ -1312,7 +1312,7 @@ export async function flowTrace(
     origin: originMeta,
   };
 
-  // --- Emit origin row (hop 1 — always 'assignment' kind per spec §Output shape) ---
+  // --- Emit origin row (hop 1 — always 'assignment' kind) ---
   const originKey = visitedKey(
     relFile,
     originLineCol.line,
@@ -1325,7 +1325,7 @@ export async function flowTrace(
   if (state.rows.length < state.limit) {
     state.rows.push({
       hop: originHopNum,
-      // parentHop is absent on origin row (spec §Output shape §Origin row)
+      // parentHop is absent on origin row
       kind: 'assignment',
       file: relFile,
       line: originLineCol.line,

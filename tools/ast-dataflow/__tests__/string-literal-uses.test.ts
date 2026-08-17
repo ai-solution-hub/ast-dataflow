@@ -6,7 +6,7 @@ import { stringLiteralUses, createProject } from '@/tools/ast-dataflow';
  * string-literal-uses query — Vitest suite
  *
  * Ground-truth fixture set under fixtures/12-string-literal-uses/.
- * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
+ * Tests verify real behaviour:
  *   - Assertions are on the result shape and counts (not call-chain internals).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) + find() antipattern.
  *   - expect.arrayContaining + expect.objectContaining for set-membership assertions.
@@ -245,7 +245,7 @@ describe('string-literal-uses — fixture 5: plain call-expression argument lite
 });
 
 // ---------------------------------------------------------------------------
-// Spatial-coverage truncation (PRODUCT inv 14): 'project_id' has two sites in
+// Spatial-coverage truncation: 'project_id' has two sites in
 // each of fixture-argument.ts and fixture-argument-second.ts (four total).
 // ---------------------------------------------------------------------------
 describe('string-literal-uses — spatial-coverage truncation with a low limit', () => {

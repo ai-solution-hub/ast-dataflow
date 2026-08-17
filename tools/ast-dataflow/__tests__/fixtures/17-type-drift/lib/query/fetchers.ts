@@ -1,5 +1,5 @@
 /**
- * Fixture fetchers — mirrors the KH pattern of fetchJson<T>(url).
+ * Fixture fetchers — mirrors the common fetchJson<T>(url) helper pattern.
  *
  * Coverage:
  *   - fetchItems: uses ItemListResponse (enforced — also annotated in route)
@@ -12,7 +12,7 @@
 
 import type { ItemListResponse, OrderSummaryResponse } from '@/types/items';
 
-/** fetchJson stub — mirrors lib/query/fetchers.ts:29 unchecked cast. */
+/** fetchJson stub — unchecked res.json() cast, as real fetch helpers do. */
 async function fetchJson<T>(url: string): Promise<T> {
   const res = await fetch(url);
   return res.json() as Promise<T>;

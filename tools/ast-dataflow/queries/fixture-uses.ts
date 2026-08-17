@@ -18,11 +18,10 @@ const VALID_KINDS: readonly FixtureUseKind[] = ['key', 'value'];
 
 /**
  * Default fixture target set, rooted at repoRoot and evaluated fresh per
- * invocation. "Fixture by convention" (D1) = a `/fixtures/` path segment OR a
+ * invocation. "Fixture by convention" = a `/fixtures/` path segment OR a
  * `*-fixture.ts` basename — both attested in-repo. The `docs/ontology/*.md`
- * glob currently matches nothing in the canonical repo (the ontology docs
- * moved to the private docs-site, which inv 30 forbids scanning); it is kept
- * as a harmless no-op that self-heals if the docs return (D2).
+ * glob currently matches nothing in this repo; it is kept as a harmless
+ * no-op that self-heals if such docs appear.
  */
 const DEFAULT_TARGETS = [
   '__tests__/**/*.json',
@@ -211,8 +210,8 @@ function yamlContext(path: readonly unknown[], node: unknown): string {
 }
 
 /**
- * Only the frontmatter is scanned (inv 11); md body search stays cocoindex /
- * grep territory per PRODUCT Non-goals. Files with no frontmatter or a YAML
+ * Only the frontmatter is scanned; md body search stays grep territory — a
+ * deliberate non-goal here. Files with no frontmatter or a YAML
  * parse failure are skipped silently (same partial tolerance as JSON mode).
  */
 function scanMarkdownFile(
@@ -344,7 +343,7 @@ function scanTsFiles(
 /**
  * Find every occurrence of an exact string in the fixture corpus — JSON
  * fixtures, fixture-flagged TS, md frontmatter, and `database.types.ts` —
- * split into key vs value occurrences (PRODUCT.md invariant 11).
+ * split into key vs value occurrences.
  *
  * The main ts-morph project is deliberately unused: the root tsconfig
  * excludes `scripts`, `supabase`, and the tool's own fixtures, so discovery

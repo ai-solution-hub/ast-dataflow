@@ -5,7 +5,7 @@ import type { BaseResult } from '@/tools/ast-dataflow/types';
 /**
  * truncateSpatial — pure unit suite (no ts-morph).
  *
- * PRODUCT inv 14: truncation prefers spatial coverage — distinct files come
+ * Contract: truncation prefers spatial coverage — distinct files come
  * first, multiple hits per file thin last. Output is deterministically sorted
  * by (file, line, column) regardless of input (discovery) order.
  */

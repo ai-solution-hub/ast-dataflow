@@ -1,12 +1,11 @@
 /**
- * Performance smoke tests for the flow-trace query (PRODUCT.md P-19).
+ * Performance smoke tests for the flow-trace query.
  *
- * OQ-FT5 resolution gate: both assertions must pass within 10 s (warm P95)
- * before WP3 is considered complete. If either fails, the default maxDepth
- * should be reduced to 6 and a backlog item opened.
+ * Gate: both assertions must pass within 10 s (warm P95). If either fails,
+ * the default maxDepth should be reduced to 6 and a backlog item opened.
  *
  * These tests use small synthetic fixtures from the 14-flow-trace fixture
- * directory, NOT the full KH corpus, to keep test time predictable on CI.
+ * directory, NOT a full production corpus, to keep test time predictable on CI.
  * A one warm-up run is executed first; the measured time is the second run.
  */
 
@@ -16,7 +15,7 @@ import { createProject } from '@/tools/ast-dataflow';
 import { flowTrace } from '@/tools/ast-dataflow/queries/flow-trace';
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '14-flow-trace');
-const PERF_BUDGET_MS = 10_000; // 10 s per PRODUCT.md P-19 heuristic budget
+const PERF_BUDGET_MS = 10_000; // 10 s heuristic budget
 
 function makeProject() {
   return createProject({
@@ -64,7 +63,7 @@ describe('flow-trace performance — 5-hop warm time', () => {
       ]),
     );
 
-    // OQ-FT5: warm time must be within budget.
+    // Gate: warm time must be within budget.
     expect(wallMs).toBeLessThan(PERF_BUDGET_MS);
   });
 });
@@ -105,7 +104,7 @@ describe('flow-trace performance — 8-hop warm time', () => {
       ]),
     );
 
-    // OQ-FT5: warm time must be within budget.
+    // Gate: warm time must be within budget.
     expect(wallMs).toBeLessThan(PERF_BUDGET_MS);
   });
 });

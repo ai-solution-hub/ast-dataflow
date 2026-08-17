@@ -17,8 +17,8 @@ function makeDb() {
 
 const db = makeDb();
 
-async function insertStructural(procurementId: string) {
-  return db.from('survey_questions').insert({ project_id: procurementId });
+async function insertStructural(projectId: string) {
+  return db.from('survey_questions').insert({ project_id: projectId });
 }
 
 export { insertStructural };

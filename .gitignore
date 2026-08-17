@@ -3,3 +3,6 @@ __pycache__/
 *.pyc
 .ast-dataflow/
 *.tsbuildinfo
+.DS_Store
+.pytest_cache/
+.memdb/

@@ -56,8 +56,8 @@ type BodyCollection =
   | { outcome: 'bodyless' };
 
 /**
- * Locate the body (or bodies, for a class) of the subject declaration.
- * Mirrors the shape table in fixQueries.md §A step 2.
+ * Locate the body (or bodies, for a class) of the subject declaration —
+ * which node kinds carry a body, and where that body hangs off each kind.
  */
 function collectBodies(decl: Node): BodyCollection {
   const kind = decl.getKind();
@@ -121,7 +121,7 @@ function collectBodies(decl: Node): BodyCollection {
 /**
  * A declaration is external when its source file lives outside the tsconfig
  * corpus (node_modules or the TypeScript lib .d.ts files). External rows must
- * never carry their path (PRODUCT.md inv 16).
+ * never carry their path.
  */
 function isExternalDeclaration(declSf: SourceFile, repoRoot: string): boolean {
   if (declSf.isInNodeModules() || declSf.isFromExternalLibrary()) return true;
@@ -140,8 +140,8 @@ interface ResolvedCallee {
 }
 
 /**
- * Classify by the (post-alias) declaration kind — the "declaration kind
- * decides" table in fixQueries.md §A step 5.
+ * Classify by the (post-alias) declaration kind — the declaration kind
+ * decides the resolution, not the call-site syntax.
  */
 function classifyByDeclaration(decl: Node): CallResolution {
   switch (decl.getKind()) {
@@ -154,7 +154,7 @@ function classifyByDeclaration(decl: Node): CallResolution {
         decl.asKindOrThrow(SyntaxKind.VariableDeclaration).getInitializer(),
       );
       // Inline `const f = () => {}` IS the function; a variable holding a
-      // function reference is PRODUCT's 'indirect'.
+      // function reference is 'indirect'.
       return init &&
         (init.isKind(SyntaxKind.ArrowFunction) ||
           init.isKind(SyntaxKind.FunctionExpression))

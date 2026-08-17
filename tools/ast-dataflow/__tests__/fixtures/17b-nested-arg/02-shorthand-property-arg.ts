@@ -1,9 +1,9 @@
 // Fixture: shorthand property argument
-// Pattern: execute('fn', { procurementIds }) — shorthand for { procurementIds: procurementIds }
+// Pattern: execute('fn', { projectIds }) — shorthand for { projectIds: projectIds }
 // This exercises the ShorthandPropertyAssignment path in the walker.
 //
-// origin: const procurementIds (line 12, column 9)
-// hop 2: argument hop — execute('fn', { procurementIds }) call site
+// origin: const projectIds (line 12, column 9)
+// hop 2: argument hop — execute('fn', { projectIds }) call site
 //         (ShorthandPropertyAssignment → ObjectLiteralExpression → CallExpression)
 
 interface QueryClient {
@@ -11,6 +11,6 @@ interface QueryClient {
 }
 
 export async function fetchStatsShorthand(client: QueryClient) {
-  const procurementIds = [1, 2, 3];
-  await client.execute('get_form_question_stats_batch', { procurementIds });
+  const projectIds = [1, 2, 3];
+  await client.execute('get_survey_question_stats_batch', { projectIds });
 }

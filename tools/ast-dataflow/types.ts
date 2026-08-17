@@ -22,7 +22,7 @@ export interface CallSiteResult extends BaseResult {
 }
 
 /**
- * Structured error kinds (PRODUCT.md invariant 29).
+ * Structured error kinds.
  *
  * - unknown_file    — the file path supplied to a symbol query is not in the
  *                     ts-morph project (not in tsconfig.json's file set), or
@@ -162,7 +162,7 @@ export interface CallersArgs {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// callees query (PRODUCT.md invariant 2)
+// callees query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /** How the call is spelled at the call site. */
@@ -217,7 +217,7 @@ export interface CalleesResponse extends QueryResponse<CalleeResult> {
 }
 
 export interface ImportersArgs {
-  modulePath: string; // '@/lib/ai/change-reports' or 'lib/ai/change-reports.ts'
+  modulePath: string; // '@/lib/surveys/survey-queries' or 'lib/surveys/survey-queries.ts'
   limit?: number; // default 200
 }
 
@@ -318,7 +318,7 @@ export interface ColumnWriteResult extends BaseResult {
 }
 
 /**
- * Arguments for the dead-exports query (PRODUCT.md inv. 9).
+ * Arguments for the dead-exports query.
  *
  * - scope          — optional glob or directory to restrict the search.
  *                    When omitted, the full ts-morph project is scanned.
@@ -369,7 +369,7 @@ export interface DeadExportResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// type-evolution query (PRODUCT.md invariant 7, R-WP3)
+// type-evolution query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -396,7 +396,7 @@ export type TypeEvolutionKind =
   | 'destructuring';
 
 export interface TypeEvolutionArgs {
-  /** The TypeScript type / interface name to probe. E.g. `'ProcurementQuestion'`. */
+  /** The TypeScript type / interface name to probe. E.g. `'SurveyQuestion'`. */
   type: string;
   /** The property name to probe within that type. E.g. `'project_id'`. */
   property: string;
@@ -420,7 +420,7 @@ export interface TypeEvolutionResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// reexport-chain query (PRODUCT.md invariant 8, R-WP2)
+// reexport-chain query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -439,7 +439,7 @@ export interface TypeEvolutionResult extends BaseResult {
 export type ReexportChainKind = 'declaration' | 'reexport' | 'importer';
 
 /**
- * Arguments for the reexport-chain query (PRODUCT.md inv. 8).
+ * Arguments for the reexport-chain query.
  *
  * - symbol        — the exported symbol name to trace.
  * - from          — optional repo-root-relative file path that declares
@@ -483,7 +483,7 @@ export interface ReexportChainResult extends BaseResult {
 // --- enum-uses ---
 
 /**
- * Arguments for the enum-uses query (PRODUCT.md inv. 11, R-WP5).
+ * Arguments for the enum-uses query.
  *
  * - enum    — the TypeScript enum name to probe. E.g. `'OrderStatus'`.
  * - member  — optional member name to filter results. E.g. `'PENDING'`.
@@ -532,7 +532,7 @@ export interface EnumUseResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// string-literal-uses query (PRODUCT.md invariant 10, R-WP4)
+// string-literal-uses query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -553,7 +553,7 @@ export type StringLiteralUseKind =
   'viMock' | 'jsxProp' | 'sqlTag' | 'envKey' | 'argument';
 
 /**
- * Arguments for the string-literal-uses query (PRODUCT.md inv. 10).
+ * Arguments for the string-literal-uses query.
  *
  * - value  — the exact string literal value to search for (required).
  *            e.g. '@/lib/foo', 'BID_DRAFT', 'project_id'.
@@ -584,11 +584,11 @@ export interface StringLiteralUseResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// fixture-uses query (PRODUCT.md invariant 11)
+// fixture-uses query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
- * The two kinds of fixture occurrence (PRODUCT.md inv. 11's key/value split):
+ * The two kinds of fixture occurrence (the key/value split):
  *
  * - key   — the needle names a field: a JSON object key, a YAML mapping key,
  *           a TS object-literal / type-literal property name (including the
@@ -603,7 +603,7 @@ export type FixtureUseKind = 'key' | 'value';
 export type FixtureFileType = 'json' | 'ts' | 'md-frontmatter';
 
 /**
- * Arguments for the fixture-uses query (PRODUCT.md inv. 11).
+ * Arguments for the fixture-uses query.
  *
  * - needle — exact string to find (column/table/magic literal).
  * - kinds  — filter; default both.
@@ -630,7 +630,7 @@ export interface FixtureUseResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// flow-trace query (ROADMAP R-WP6; see TECH.md §Query implementations → flow-trace)
+// flow-trace query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -717,7 +717,7 @@ export interface FlowTraceRow extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// type-drift-detect query (PRODUCT.md WP-D, R-WP17)
+// type-drift-detect query
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -750,7 +750,7 @@ export interface TypeDriftDetectArgs {
 }
 
 /**
- * One result row for the type-drift-detect query (PRODUCT.md WP-D D-11).
+ * One result row for the type-drift-detect query.
  *
  * Extends BaseResult — `file`, `line`, `column`, `confidence` are inherited
  * from the `declaredAt` position.
@@ -795,12 +795,12 @@ export interface TypeDriftResult extends BaseResult {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// schema-coverage query (id-375 {375.8} — the "built-not-wired" audit)
+// schema-coverage query — the "built-not-wired" audit
 // ──────────────────────────────────────────────────────────────────────────────
 
 /**
  * Per-column wiring verdict. Indirect/wildcard evidence NEVER counts as
- * wiring evidence (a nonexistent column collects both — baseline audit §2).
+ * wiring evidence (a nonexistent column collects both).
  *
  * - wired       — ≥1 exact read AND ≥1 exact write.
  * - read-only   — exact evidence on the read side only.
@@ -929,7 +929,7 @@ export interface SchemaCoverageResult {
 }
 
 /**
- * Top-level scan caveats (PRODUCT SQL-opaque disclosure): the verdicts are
+ * Top-level scan caveats: the verdicts are
  * TS-query-chain evidence only. Static fields — no SQL parsing.
  *
  * `unattributableSites` counts dynamic `.from(<arg>)` sites whose table could

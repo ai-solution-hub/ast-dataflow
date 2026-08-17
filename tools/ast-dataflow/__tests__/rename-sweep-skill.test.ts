@@ -10,8 +10,9 @@ import {
 /**
  * Rename-sweep verifier — 3-query battery test
  *
- * Validates the skill workflow described in:
- *   .claude/skills/ast-dataflow/ast-dataflow-rename-sweep/SKILL.md
+ * Validates the post-rename sweep workflow: after a high-confidence
+ * TypeScript-symbol rename, a three-query battery (importers +
+ * string-literal-uses + references) surfaces the sites the executor missed.
  *
  * Scenario: gitnexus_rename applied a TypeScript-symbol rename
  *   generateReport → generateChangeReport
@@ -25,7 +26,7 @@ import {
  *   consumer-renamed.ts       — correctly-updated consumer (no misses)
  *   test-with-missed-string.ts — test file with two unmissed string literals
  *
- * Tests follow docs/reference/testing/test-philosophy.md:
+ * Test conventions:
  *   - Assertions on result shape and counts (not internal call-chain).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) antipattern.
  *   - Test titles read like product specs (what the operator observes).

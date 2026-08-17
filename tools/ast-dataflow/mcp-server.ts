@@ -33,10 +33,11 @@ const repoRoot = process.cwd();
 /**
  * Caller-supplied file paths are confined to the repo root on this surface
  * (issue #1): the caller is a model, not the operator holding the shell. An
- * operator who needs the server to read a sidecar written elsewhere — the
- * census writes to $TMPDIR/canonical-census — opts in by spawning the server
- * with AST_DATAFLOW_ALLOWED_ROOTS set. Fixed at spawn, so no request can
- * widen it. The CLI is unconfined and remains the unrestricted path.
+ * operator who needs the server to read a sidecar written elsewhere — e.g.
+ * an evidence sidecar a producer wrote under $TMPDIR — opts in by spawning
+ * the server with AST_DATAFLOW_ALLOWED_ROOTS set. Fixed at spawn, so no
+ * request can widen it. The CLI is unconfined and remains the unrestricted
+ * path.
  */
 const pathPolicy = mcpPathPolicy(
   repoRoot,
@@ -52,7 +53,7 @@ function getState(): WarmState {
   return state;
 }
 
-/** All tool work funnels through one promise chain (inv 21): ts-morph is
+/** All tool work funnels through one promise chain: ts-morph is
  *  single-threaded, so overlapping tools/call requests run in order. */
 const queue = createSerialQueue();
 
@@ -80,7 +81,7 @@ const TOOLS = [
     description:
       'Run one ast-dataflow query against a warm, type-checked ts-morph view of the repo. ' +
       'Same catalogue and JSON envelope as `bun run ast-dataflow <query>`; `args` mirrors the CLI flags as camelCase keys ' +
-      "(e.g. callers/callees/references: {symbol: 'lib/supabase/safe.ts:sb'}; importers: {modulePath}; " +
+      "(e.g. callers/callees/references: {symbol: 'lib/db.ts:getClient'}; importers: {modulePath}; " +
       'column-reads/column-writes: {table, column}; type-evolution: {type, property}; enum-uses: {enum, member?}; ' +
       'string-literal-uses: {value}; fixture-uses: {needle}; reexport-chain: {symbol, from?}; ' +
       'flow-trace: {originFile, originLine, originColumn}; plus optional limit/excludeTests/scope where the CLI accepts them). ' +

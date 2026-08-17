@@ -1,4 +1,4 @@
-// EXEMPT from spatial-coverage truncation (truncate.ts / PRODUCT inv 14):
+// EXEMPT from spatial-coverage truncation (truncate.ts):
 // rows are chain hops (declaration → barrel(distance n) → importers) where a
 // spatial (file, line, column) reorder would break barrel→importer contiguity.
 // The collect-then-slice cap is kept instead. Caveat: the BFS stops enumerating

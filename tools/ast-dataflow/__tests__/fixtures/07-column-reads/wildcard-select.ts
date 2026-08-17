@@ -17,11 +17,11 @@ type Database = {
 
 const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 
-async function fetchAllQuestions(procurementId: string) {
+async function fetchAllQuestions(projectId: string) {
   const { data } = await sb
     .from('survey_questions')
     .select('*')
-    .eq('id', procurementId)
+    .eq('id', projectId)
     .single();
 
   return data;

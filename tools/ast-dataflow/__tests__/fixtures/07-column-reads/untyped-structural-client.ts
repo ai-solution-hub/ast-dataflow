@@ -4,7 +4,7 @@
 // structural return-type text containing `{`.
 // Expected column-reads hits for table='survey_questions', column='project_id':
 //   Line 27 — .select('project_id')            method='select'  isTyped=false  confidence='indirect'
-//   Line 27 — .eq('project_id', procurementId) method='eq'      isTyped=false  confidence='indirect'
+//   Line 27 — .eq('project_id', projectId) method='eq'      isTyped=false  confidence='indirect'
 function makeDb() {
   return {
     from(_table: string) {
@@ -23,11 +23,11 @@ function makeDb() {
 
 const db = makeDb();
 
-async function fetchStructural(procurementId: string) {
+async function fetchStructural(projectId: string) {
   return db
     .from('survey_questions')
     .select('project_id')
-    .eq('project_id', procurementId);
+    .eq('project_id', projectId);
 }
 
 export { fetchStructural };

@@ -375,7 +375,7 @@ describe('flow-trace — truncation at row cap', () => {
 });
 
 // ---------------------------------------------------------------------------
-// WP2 Tests
+// Sink and wildcard tests
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -488,7 +488,7 @@ describe('flow-trace — mutation sink (.push)', () => {
 // ---------------------------------------------------------------------------
 // Test 8: apiCall sink (Supabase chain terminal method)
 // Fixture: 06-api-call.ts — supabase.from('items').insert(payload)
-// Expected: 2 hops (origin payload, apiCall at .insert()). OQ-FT2 LOCK:
+// Expected: 2 hops (origin payload, apiCall at .insert()). Locked contract:
 // apiCall hop emitted at terminal mutating call (.insert), NOT at .from().
 // ---------------------------------------------------------------------------
 describe('flow-trace — apiCall sink (Supabase .insert)', () => {
@@ -524,7 +524,7 @@ describe('flow-trace — apiCall sink (Supabase .insert)', () => {
       ]),
     );
 
-    // hop 2: .insert(payload) — apiCall hop at terminal call (OQ-FT2 lock)
+    // hop 2: .insert(payload) — apiCall hop at terminal call (locked contract)
     expect(response.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -646,7 +646,7 @@ describe('flow-trace — indirect tier (dynamic property access)', () => {
 });
 
 // ---------------------------------------------------------------------------
-// Wave 5 Tests — procurementIds nested-arg fix
+// Nested-arg tests — object-literal property arguments
 // ---------------------------------------------------------------------------
 
 function makeNestedArgProject() {
@@ -659,8 +659,8 @@ function makeNestedArgProject() {
 // ---------------------------------------------------------------------------
 // Test 17b-1: Nested object-literal property (PropertyAssignment)
 // Fixture: 01-nested-property-arg.ts
-// Pattern: rpc('fn', { p_project_ids: procurementIds })
-// Origin: const procurementIds at line 14, col 9
+// Pattern: rpc('fn', { p_project_ids: projectIds })
+// Origin: const projectIds at line 14, col 9
 // Expected: 2 hops — origin (assignment) + argument hop at the rpc() call site
 // Hop kind: 'argument' (value flows as a call argument via object literal property)
 // Confidence: 'exact' (static key, statically-known call)
@@ -684,7 +684,7 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
     // Exactly 2 hops: origin + the argument hop at the rpc() call site
     expect(response.results).toHaveLength(2);
 
-    // hop 1: origin (procurementIds declaration)
+    // hop 1: origin (projectIds declaration)
     expect(response.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -693,12 +693,12 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
           file: '01-nested-property-arg.ts',
           line: 14,
           confidence: 'exact',
-          origin: expect.objectContaining({ symbol: 'procurementIds' }),
+          origin: expect.objectContaining({ symbol: 'projectIds' }),
         }),
       ]),
     );
 
-    // hop 2: rpc('get_form_question_stats_batch', { p_project_ids: procurementIds }) call
+    // hop 2: rpc('get_survey_question_stats_batch', { p_project_ids: projectIds }) call
     // The walker must detect the PropertyAssignment → ObjectLiteralExpression →
     // CallExpression chain and classify the hop as 'argument'.
     expect(response.results).toEqual(
@@ -719,8 +719,8 @@ describe('flow-trace — nested object-literal property argument (PropertyAssign
 // ---------------------------------------------------------------------------
 // Test 17b-2: Shorthand property argument (ShorthandPropertyAssignment)
 // Fixture: 02-shorthand-property-arg.ts
-// Pattern: rpc('fn', { procurementIds }) — shorthand for { procurementIds: procurementIds }
-// Origin: const procurementIds at line 14, col 9
+// Pattern: rpc('fn', { projectIds }) — shorthand for { projectIds: projectIds }
+// Origin: const projectIds at line 14, col 9
 // Expected: 2 hops — origin (assignment) + argument hop at the rpc() call site
 // Hop kind: 'argument', Confidence: 'exact'
 // ---------------------------------------------------------------------------
@@ -743,7 +743,7 @@ describe('flow-trace — shorthand property argument (ShorthandPropertyAssignmen
     // Exactly 2 hops: origin + the argument hop at the rpc() call site
     expect(response.results).toHaveLength(2);
 
-    // hop 1: origin (procurementIds declaration)
+    // hop 1: origin (projectIds declaration)
     expect(response.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -752,12 +752,12 @@ describe('flow-trace — shorthand property argument (ShorthandPropertyAssignmen
           file: '02-shorthand-property-arg.ts',
           line: 14,
           confidence: 'exact',
-          origin: expect.objectContaining({ symbol: 'procurementIds' }),
+          origin: expect.objectContaining({ symbol: 'projectIds' }),
         }),
       ]),
     );
 
-    // hop 2: rpc('get_form_question_stats_batch', { procurementIds }) call
+    // hop 2: rpc('get_survey_question_stats_batch', { projectIds }) call
     // The walker must detect the ShorthandPropertyAssignment → ObjectLiteralExpression →
     // CallExpression chain and classify the hop as 'argument'.
     expect(response.results).toEqual(
@@ -776,7 +776,7 @@ describe('flow-trace — shorthand property argument (ShorthandPropertyAssignmen
 });
 
 // ---------------------------------------------------------------------------
-// WP3 Tests
+// Traversal-control tests
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -918,7 +918,7 @@ describe('flow-trace — depth cutoff', () => {
 // Fixture: 11-inter-function.ts — origin payload → argument at saveToDb(payload)
 //   → descent into saveToDb's parameter (data) → apiCall at .insert(data)
 // Expected: 4 hops — origin, argument (call site), argument (callee param), apiCall.
-// OQ-FT3 LOCK: enclosing on callee hops is saveToDb (callee), not processData (caller).
+// Locked contract: enclosing on callee hops is saveToDb (callee), not processData (caller).
 // ---------------------------------------------------------------------------
 describe('flow-trace — inter-function descent', () => {
   it('descends into callee on argument hop when interFunction:true; correct enclosing on child hops', async () => {
@@ -968,7 +968,7 @@ describe('flow-trace — inter-function descent', () => {
     );
 
     // hop 3: descent into saveToDb's parameter (data)
-    // OQ-FT3: enclosing is 'fn:saveToDb' (callee), not 'fn:processData' (caller)
+    // Contract: enclosing is 'fn:saveToDb' (callee), not 'fn:processData' (caller)
     expect(response.results).toEqual(
       expect.arrayContaining([
         expect.objectContaining({

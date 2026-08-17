@@ -1,7 +1,7 @@
 /**
  * errors.test.ts
  *
- * Covers PRODUCT.md invariant 29: "Errors are returned as structured failures,
+ * Covers the structured-errors contract: "Errors are returned as structured failures,
  * not crashes." Verifies all four ErrorKind cases:
  *
  *   unknown_file    — file path not found in the ts-morph project

@@ -108,7 +108,7 @@ function classifyLiteralKind(node: Node): StringLiteralUseKind | null {
  * Find every call site where a string literal with `args.value` appears
  * as a StringLiteral node in the project.
  *
- * Classification of the call-site context (PRODUCT.md invariant 10):
+ * Classification of the call-site context:
  *   - 'viMock'   — argument to vi.mock(...)
  *   - 'jsxProp'  — JSX attribute value
  *   - 'sqlTag'   — content inside a sql`` tagged template

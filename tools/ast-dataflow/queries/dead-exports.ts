@@ -69,7 +69,7 @@ function countSymbolRefs(
   return { production, testOnly };
 }
 
-// Barrel walker is now in resolve.ts as walkBarrelChain (extracted by R-WP2).
+// Barrel walker is now in resolve.ts as walkBarrelChain.
 
 // ---------------------------------------------------------------------------
 // Extract exports from a source file
