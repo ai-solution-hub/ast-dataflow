@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { deadExports, createProject } from '@/tools/ast-dataflow';
+import { dispatch } from '@/tools/ast-dataflow/dispatch';
 
 /**
  * dead-exports query — Vitest suite
@@ -227,6 +228,83 @@ describe('dead-exports — fixture 6: export only referenced within its own file
       testOnly: false,
       confidence: 'exact',
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scope: narrows which files' exports are examined (issue #2 — the argument
+// was declared since the query was written but read by no code, so
+// `--scope <glob>` was silently dropped and the full corpus scanned)
+// ---------------------------------------------------------------------------
+describe('dead-exports — scope narrows the scanned corpus', () => {
+  it('reports only the in-scope dead exports', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await deadExports(
+      { scope: 'definitely-unused.ts' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error).toBeUndefined();
+    // Unscoped, the fixture yields dead rows in definitely-unused.ts AND
+    // same-file-only.ts; the scope drops the latter.
+    expect(response.results.map((r) => r.symbol)).toEqual(['unusedHelper']);
+    expect(response.results[0].file).toBe('definitely-unused.ts');
+  });
+
+  it('a scope matching no files returns zero rows, not an error', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await deadExports(
+      { scope: 'no-such-dir/**' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error).toBeUndefined();
+    expect(response.results).toHaveLength(0);
+  });
+
+  it('importer counting stays corpus-wide: an out-of-scope consumer keeps an in-scope export alive', async () => {
+    const { project, repoRoot } = makeProject();
+    // namedImportTarget's only consumer (consumer-named.ts) is OUTSIDE the
+    // scope; the export must still not appear dead.
+    const response = await deadExports(
+      { scope: 'used-via-named-import.ts' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error).toBeUndefined();
+    expect(response.results).toHaveLength(0);
+  });
+
+  it('the envelope records the scope in caveats.corpus.scope', async () => {
+    const { project, repoRoot } = makeProject();
+    const response = await dispatch(
+      'dead-exports',
+      { scope: 'definitely-unused.ts' },
+      project,
+      repoRoot,
+    );
+
+    expect(response.error).toBeUndefined();
+    expect(response.caveats?.corpus.scope).toBe('definitely-unused.ts');
+  });
+
+  it('a truncated response advertises --scope as a narrowing lever', async () => {
+    const { project, repoRoot } = makeProject();
+    // The unscoped fixture has at least 2 dead rows; limit 1 truncates.
+    const response = await dispatch(
+      'dead-exports',
+      { limit: 1 },
+      project,
+      repoRoot,
+    );
+
+    expect(response.truncated).toBe(true);
+    const narrowing = response.caveats?.narrowing?.join('\n') ?? '';
+    expect(narrowing).toContain('--scope');
+    expect(narrowing).toContain('(arg: scope)');
   });
 });
 

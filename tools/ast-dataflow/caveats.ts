@@ -275,6 +275,7 @@ export const QUERY_CAVEATS: Record<QueryName, CaveatSpec> = {
         value: '<name>',
         effect: 'check a single export instead of the whole corpus',
       },
+      SCOPE_FILTER,
       EXCLUDE_TESTS_FILTER,
       LIMIT_FILTER,
     ],

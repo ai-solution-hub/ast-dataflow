@@ -202,6 +202,7 @@ function printCatalogue(): void {
             args: [
               '--symbol <name>',
               '--symbols <file>',
+              '[--scope GLOB[,GLOB...]]',
               '--exclude-tests',
               '--limit N',
               '--pretty',
@@ -649,6 +650,11 @@ async function main(): Promise<void> {
       const symbolArg = parsed.flags.symbol;
       const symbolsFileArg = parsed.flags.symbols;
       const limit = parseLimit(parsed.flags.limit);
+      const scopeArg = parsed.flags.scope;
+      if (scopeArg !== undefined && typeof scopeArg !== 'string') {
+        console.error('--scope requires comma-separated glob patterns');
+        process.exit(2);
+      }
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const response = await dispatch(
         'dead-exports',
@@ -657,6 +663,7 @@ async function main(): Promise<void> {
           ...(typeof symbolsFileArg === 'string'
             ? { symbolsFile: symbolsFileArg }
             : {}),
+          ...(scopeArg ? { scope: scopeArg } : {}),
           ...(limit ? { limit } : {}),
           ...(excludeTests ? { excludeTests } : {}),
         },
