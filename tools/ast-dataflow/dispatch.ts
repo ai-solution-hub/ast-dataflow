@@ -117,29 +117,6 @@ export interface QueryResponseMap {
 
 export type DispatchResponse = QueryResponseMap[QueryName];
 
-/**
- * Required argument keys per query, for callers that receive args over a wire
- * (the MCP server) rather than through the CLI's per-flag validation. The CLI
- * keeps its own presence checks so its exit-2 messages stay byte-identical.
- */
-export const REQUIRED_ARGS: Record<QueryName, readonly string[]> = {
-  callers: ['symbol'],
-  callees: ['symbol'],
-  importers: ['modulePath'],
-  references: ['symbol'],
-  'column-reads': ['table', 'column'],
-  'column-writes': ['table', 'column'],
-  'type-evolution': ['type', 'property'],
-  'dead-exports': [],
-  'reexport-chain': ['symbol'],
-  'enum-uses': ['enum'],
-  'string-literal-uses': ['value'],
-  'fixture-uses': ['needle'],
-  'flow-trace': ['originFile', 'originLine', 'originColumn'],
-  'type-drift-detect': [],
-  'schema-coverage': [],
-};
-
 async function dispatchInner(
   query: QueryName,
   args: QueryArgMap[QueryName],

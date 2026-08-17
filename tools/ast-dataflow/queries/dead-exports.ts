@@ -17,6 +17,7 @@ import {
   walkBarrelChain,
   isTestFilePath,
 } from '../resolve';
+import { buildScopeMatcher } from '../scope';
 import { truncateSpatial } from '../truncate';
 
 const DEFAULT_LIMIT = 200;
@@ -182,11 +183,20 @@ export async function deadExports(
     symbolFilter.add(args.symbol);
   }
 
+  // `scope` had been in DeadExportsArgs since the query was written but
+  // nothing read it, so `--scope <glob>` was silently dropped and the full
+  // corpus scanned (issue #2; ROADMAP ruling: implement, don't delete). It
+  // narrows which files' EXPORTS are examined; importer counting stays
+  // corpus-wide, so an in-scope export consumed only from outside the scope
+  // is still alive, never a false dead row.
+  const inScope = buildScopeMatcher(args.scope);
+
   const rows: DeadExportResult[] = [];
 
   try {
     for (const sf of project.getSourceFiles()) {
       const relPath = toRepoRelative(repoRoot, sf.getFilePath());
+      if (!inScope(relPath)) continue;
 
       // Skip test files as sources of exports-to-check.
       if (isTestFilePath(relPath)) continue;

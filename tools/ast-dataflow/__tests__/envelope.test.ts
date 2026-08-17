@@ -206,10 +206,12 @@ describe('envelope — truncation offers a narrowing path (G10)', () => {
   it('only advertises filters the query actually honours', () => {
     // A narrowing hint for an inert flag is worse than no hint: it sends the
     // caller to re-run a query that returns exactly the same rows.
-    // `dead-exports` still declares a `scope` arg that no code reads, so it
-    // must stay out of the narrowing block until it does something.
+    // `dead-exports` `scope` was exactly that — declared, read by no code —
+    // until issue #2 implemented it; now that the query reads it (proven in
+    // dead-exports.test.ts: scope really narrows the rows), the lever
+    // belongs in the narrowing block.
     const args = QUERY_CAVEATS['dead-exports'].filters.map((f) => f.arg);
-    expect(args, 'dead-exports must not advertise scope').not.toContain(
+    expect(args, 'dead-exports must advertise scope now it is real').toContain(
       'scope',
     );
   });
