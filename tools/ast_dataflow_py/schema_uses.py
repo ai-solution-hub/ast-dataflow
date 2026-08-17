@@ -4,7 +4,7 @@ One corpus walk emitting EVERY (table, column, direction) evidence row the
 three detectors can attribute — no --table/--column filter. The output is
 the v1 evidence-sidecar contract consumed by the TS side's
 ``schema-coverage --evidence``, closing its "the Python pipeline" blind spot
-(id-377 {377.4}); the same envelope serves the initiative-12 census, whose
+— the same envelope serves census-style audits, whose
 wiring rule requires Python + declarative evidence next to TS query chains.
 
 Detector deltas vs the per-column queries in ``column_uses``:

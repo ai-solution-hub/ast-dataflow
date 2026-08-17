@@ -53,9 +53,9 @@ function findRow(
 }
 
 // ---------------------------------------------------------------------------
-// D-6: Four classification states
+// Four classification states
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-6: four classification states', () => {
+describe('type-drift-detect — four classification states', () => {
   it('classifies ItemListResponse as enforced (fetcher + annotated route)', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -92,9 +92,9 @@ describe('type-drift-detect — D-6: four classification states', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-29: Test-only references → unused + testOnly flag
+// Test-only references → unused + testOnly flag
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-29: test-only references get testOnly flag', () => {
+describe('type-drift-detect — test-only references get testOnly flag', () => {
   it('classifies TestOnlyResult as unused with testOnly: true', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -108,7 +108,7 @@ describe('type-drift-detect — D-29: test-only references get testOnly flag', (
 // ---------------------------------------------------------------------------
 // JSONL row shape (exact field names)
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-11: JSONL row shape', () => {
+describe('type-drift-detect — JSONL row shape', () => {
   it('every result row has the required fields from the spec', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -140,9 +140,9 @@ describe('type-drift-detect — D-11: JSONL row shape', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-14: All file paths are repo-root-relative POSIX
+// All file paths are repo-root-relative POSIX
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-14: result paths are repo-root-relative POSIX', () => {
+describe('type-drift-detect — result paths are repo-root-relative POSIX', () => {
   it('all declaredAt.file paths are relative POSIX paths', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -157,9 +157,9 @@ describe('type-drift-detect — D-14: result paths are repo-root-relative POSIX'
 });
 
 // ---------------------------------------------------------------------------
-// D-16: Evidence rows — fetcher-only rows have fetcher sites + candidateRoutes
+// Evidence rows — fetcher-only rows have fetcher sites + candidateRoutes
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-16: evidence rows on fetcher-only findings', () => {
+describe('type-drift-detect — evidence rows on fetcher-only findings', () => {
   it('fetcher-only row has at least one fetcher call site', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -198,9 +198,9 @@ describe('type-drift-detect — D-16: evidence rows on fetcher-only findings', (
 });
 
 // ---------------------------------------------------------------------------
-// D-10: Most-favourable classification wins (one row per interface)
+// Most-favourable classification wins (one row per interface)
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-10: one classification per interface', () => {
+describe('type-drift-detect — one classification per interface', () => {
   it('each interface name appears at most once in results', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -220,9 +220,9 @@ describe('type-drift-detect — D-10: one classification per interface', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-15: Discovery — candidate set includes types/ and fetcher generics
+// Discovery — candidate set includes types/ and fetcher generics
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-15: default candidate set discovery', () => {
+describe('type-drift-detect — default candidate set discovery', () => {
   it('discovers all 5 interfaces from types/items.ts', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({}, project, repoRoot);
@@ -241,9 +241,9 @@ describe('type-drift-detect — D-15: default candidate set discovery', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-4: --interfacePattern flag adds extra candidates
+// --interfacePattern flag adds extra candidates
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-4: --interfacePattern adds extra candidates', () => {
+describe('type-drift-detect — --interfacePattern adds extra candidates', () => {
   it('picks up an otherwise-excluded name when the pattern matches', async () => {
     const { project, repoRoot } = makeProject();
     // "CustomData" does not match the default patterns (Response|Payload|Result|Body)
@@ -266,9 +266,9 @@ describe('type-drift-detect — D-4: --interfacePattern adds extra candidates', 
 });
 
 // ---------------------------------------------------------------------------
-// D-13: Capped output — --limit truncates results
+// Capped output — --limit truncates results
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-13: capped output', () => {
+describe('type-drift-detect — capped output', () => {
   it('truncates when --limit is smaller than total results', async () => {
     const { project, repoRoot } = makeProject();
     const response = await typeDriftDetect({ limit: 2 }, project, repoRoot);
@@ -288,9 +288,9 @@ describe('type-drift-detect — D-13: capped output', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-25: No fetchers found — informational row on missing/empty fetchers file
+// No fetchers found — informational row on missing/empty fetchers file
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-25: no fetchers found', () => {
+describe('type-drift-detect — no fetchers found', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -333,7 +333,7 @@ describe('type-drift-detect — D-25: no fetchers found', () => {
     });
     const response = await typeDriftDetect({}, project, repoRoot);
 
-    // Spec D-25: a single sentinel row with no-fetchers-found, no crash.
+    // Contract: a single sentinel row with no-fetchers-found, no crash.
     expect(response.results).toHaveLength(1);
     expect(response.results[0].error?.kind).toBe('no-fetchers-found');
     expect(response.results[0].error?.confidence).toBe('exact');
@@ -341,9 +341,9 @@ describe('type-drift-detect — D-25: no fetchers found', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-17: Allowlist — allowlisted interfaces excluded from fetcher-only
+// Allowlist — allowlisted interfaces excluded from fetcher-only
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-17: allowlist support', () => {
+describe('type-drift-detect — allowlist support', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -440,9 +440,9 @@ describe('type-drift-detect — D-17: allowlist support', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-21: --ci does not mutate baseline file
+// --ci does not mutate baseline file
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-21: --ci does not mutate baseline', () => {
+describe('type-drift-detect — --ci does not mutate baseline', () => {
   let tmpDir: string;
   let baselineContent: string;
 
@@ -515,9 +515,9 @@ describe('type-drift-detect — D-21: --ci does not mutate baseline', () => {
 });
 
 // ---------------------------------------------------------------------------
-// D-19: --ci exits non-zero when new fetcher-only rows are not in baseline
+// --ci exits non-zero when new fetcher-only rows are not in baseline
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-19: --ci mode exits non-zero on new rows', () => {
+describe('type-drift-detect — --ci mode exits non-zero on new rows', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -572,9 +572,9 @@ describe('type-drift-detect — D-19: --ci mode exits non-zero on new rows', () 
 });
 
 // ---------------------------------------------------------------------------
-// D-30: Structured failure — malformed allowlist exits cleanly with error row
+// Structured failure — malformed allowlist exits cleanly with error row
 // ---------------------------------------------------------------------------
-describe('type-drift-detect — D-30: structured failure on bad allowlist', () => {
+describe('type-drift-detect — structured failure on bad allowlist', () => {
   let tmpDir: string;
 
   beforeEach(() => {
@@ -647,5 +647,33 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
     // structured error indicating the allowlist was malformed.
     expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('parse_error');
+    // The hint names the specific file that failed to parse (here, the
+    // legacy fallback path — the only allowlist present).
+    expect(response.error?.hint).toBe(
+      `Fix ${join(
+        tmpDir,
+        'docs',
+        'specs',
+        'ast-dataflow-tool',
+        'type-safety-pipeline',
+        'allowlist.json',
+      )}`,
+    );
+  });
+
+  it('hint names the primary dotfile when THAT is the file that failed', async () => {
+    // The primary repo-root dotfile is checked before the legacy fallback,
+    // so when both exist and the dotfile is malformed, the hint must point
+    // at the dotfile — not at the legacy path.
+    writeFileSync(join(tmpDir, '.type-drift-allowlist.json'), '{ invalid json');
+    const { project, repoRoot } = createProject({
+      tsConfigFilePath: join(tmpDir, 'tsconfig.json'),
+      repoRoot: tmpDir,
+    });
+    const response = await typeDriftDetect({}, project, repoRoot);
+    expect(response.error?.kind).toBe('parse_error');
+    expect(response.error?.hint).toBe(
+      `Fix ${join(tmpDir, '.type-drift-allowlist.json')}`,
+    );
   });
 });

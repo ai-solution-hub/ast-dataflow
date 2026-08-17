@@ -2,7 +2,7 @@
  * Performance fixture: 8-hop synthetic chain.
  * A linear assignment chain of 8 hops representing the worst-case depth.
  *
- * Used by performance.test.ts to validate the 10-second P95 budget (P-19).
+ * Used by performance.test.ts to validate the 10-second P95 budget.
  */
 
 export function deepChain(input: string) {

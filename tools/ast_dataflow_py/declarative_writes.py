@@ -6,7 +6,7 @@ by `mount_table_target(ctx, "<table>", SCHEMA)`, written through
 `target.declare_row(row={...})`. None of those sites contain SQL or a
 supabase-py chain, so the raw-SQL and fluent-chain detectors in
 ``column_uses`` never fire on them — the pipeline's PRIMARY write path was
-invisible to both ast-dataflow sides (id-377 {377.4}).
+invisible to both ast-dataflow sides before this module existed.
 
 Three collection passes per file, then a corpus-level resolution step:
 

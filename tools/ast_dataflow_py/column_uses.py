@@ -16,7 +16,7 @@ tool cannot see:
 
 Deliberately NOT covered: Python symbol queries (callers / references /
 importers). Jedi, Pyright, and GitNexus already resolve those; duplicating
-them adds nothing (see ID-50 review notes).
+them adds nothing.
 
 Result rows follow the TS QueryResponse row shape: repo-root-relative POSIX
 file path, 1-based line/column, ``confidence`` in exact | wildcard | indirect.

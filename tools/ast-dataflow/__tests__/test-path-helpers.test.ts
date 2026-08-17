@@ -27,9 +27,9 @@ describe('isTestFilePath — canonical behaviour', () => {
     expect(isTestFilePath('components/Button.spec.tsx')).toBe(true);
   });
 
-  // ── Root-level __tests__/ prefix ────────────────────────────────────────
+  // ── __tests__/ directory conventions (nested and root-level) ────────────
 
-  it('detects __tests__/ root prefix (root-level convention)', () => {
+  it('detects a nested __tests__/ directory segment', () => {
     expect(
       isTestFilePath('tools/ast-dataflow/__tests__/importers.test.ts'),
     ).toBe(true);

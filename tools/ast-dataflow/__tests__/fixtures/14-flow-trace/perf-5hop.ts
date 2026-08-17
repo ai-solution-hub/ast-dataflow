@@ -3,7 +3,7 @@
  * Simulates a realistic Supabase payload flow:
  *   raw → validated → enriched → formatted → final → .insert(final)
  *
- * Used by performance.test.ts to validate the 10-second P95 budget (P-19).
+ * Used by performance.test.ts to validate the 10-second P95 budget.
  */
 
 interface SupabaseClient {
