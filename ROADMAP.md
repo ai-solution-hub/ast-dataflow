@@ -75,20 +75,22 @@ Ordered by whether the work removes a wrong answer, then by effort.
 Tracked as issues, because they are about how the tool presents itself rather than what it
 can see.
 
-- **[#2](https://github.com/ai-solution-hub/ast-dataflow/issues/2)** — migrate the MCP
-  server from the hand-rolled low-level `Server` to `McpServer.registerTool`, with a
-  strict Zod discriminated union on `query`. This is the root cause of several smaller
-  complaints: unknown flags are silently accepted and echoed back as honoured, there is no
-  `outputSchema`, no tool annotations, and `isError` is inconsistent.
-  `DeadExportsArgs.scope` is folded in — it is declared and read by no code, so
-  `dead-exports --scope <glob>` is today silently dropped and the full corpus scanned. The
-  ruling is to implement it, so that strict schemas honour declared arguments rather than
-  rejecting them.
-- **[#3](https://github.com/ai-solution-hub/ast-dataflow/issues/3)** — no evaluation
-  exists for the MCP surface, and no tests cover tool listing, argument rejection or
-  `isError`. Also pagination (there is no offset or `has_more`), a `responseFormat` option
-  (markdown renderers exist in the CLI and are unreachable over MCP), and a character cap
-  on responses.
+- **[#2](https://github.com/ai-solution-hub/ast-dataflow/issues/2)** — **resolved**: the
+  MCP server registers through `McpServer.registerTool` with a strict Zod schema per
+  query, so an unknown or misspelled argument is rejected with a message naming it and the
+  valid keys, never silently accepted and echoed back as honoured; responses carry
+  `structuredContent` against an advertised `outputSchema`, both tools are annotated
+  read-only, and any envelope carrying `error` is flagged `isError`. The ruling on
+  `DeadExportsArgs.scope` — implement it, so that strict schemas honour declared arguments
+  rather than rejecting them — is in: `dead-exports --scope <glob>` narrows which files'
+  exports are examined on both surfaces, while importer counting stays corpus-wide (an
+  in-scope export consumed only from outside the scope is still alive).
+- **[#3](https://github.com/ai-solution-hub/ast-dataflow/issues/3)** — the MCP surface now
+  has a Phase-4 evaluation (`evaluation.xml`) and a registerTool suite covering tool
+  listing, argument rejection and `isError` over an in-memory transport pair; still open:
+  stdio-transport coverage, pagination (there is no offset or `has_more`), a
+  `responseFormat` option (markdown renderers exist in the CLI and are unreachable over
+  MCP), and a character cap on responses.
 - **[#4](https://github.com/ai-solution-hub/ast-dataflow/issues/4)** — two measured holes
   in the envelope work: `reexport-chain` under-reports truncation at small limits, so it
   can return fewer rows than exist with `truncated: false` and no narrowing block; and
