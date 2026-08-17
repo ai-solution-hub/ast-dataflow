@@ -27,9 +27,9 @@ describe('isTestFilePath — canonical behaviour', () => {
     expect(isTestFilePath('components/Button.spec.tsx')).toBe(true);
   });
 
-  // ── KH-style __tests__/ root prefix ──────────────────────────────────────
+  // ── Root-level __tests__/ prefix ────────────────────────────────────────
 
-  it('detects __tests__/ root prefix (KH convention)', () => {
+  it('detects __tests__/ root prefix (root-level convention)', () => {
     expect(
       isTestFilePath('tools/ast-dataflow/__tests__/importers.test.ts'),
     ).toBe(true);

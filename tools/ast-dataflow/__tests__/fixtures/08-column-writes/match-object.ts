@@ -3,7 +3,7 @@
 // (not a mutation). The query reports it with method='match'.
 //
 // Expected column-writes hits for table='survey_questions', column='project_id':
-//   Line 23 — .match({ project_id: procurementId })  method='match'  isTyped=true  confidence='exact'  (longhand)
+//   Line 23 — .match({ project_id: projectId })  method='match'  isTyped=true  confidence='exact'  (longhand)
 //   Line 31 — .match({ project_id })  method='match'  isTyped=true  confidence='exact'  (shorthand)
 import { createClient } from './supabase-stub.js';
 
@@ -25,11 +25,11 @@ type Database = {
 const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 
 // Longhand match — { project_id: value }
-async function updateByProject(procurementId: string) {
+async function updateByProject(projectId: string) {
   const { data } = await sb
     .from('survey_questions')
     .update({ status: 'archived' })
-    .match({ project_id: procurementId })
+    .match({ project_id: projectId })
     .single();
   return data;
 }

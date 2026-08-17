@@ -31,11 +31,11 @@ const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 // `string` table argument at compile time.
 const sbUntyped = createClient('https://example.supabase.co', 'anon-key');
 
-async function readViaLiteralConst(procurementId: string) {
+async function readViaLiteralConst(projectId: string) {
   const { data } = await sb
     .from(SURVEY_QUESTIONS_TABLE)
     .select('project_id, question_text')
-    .eq('project_id', procurementId)
+    .eq('project_id', projectId)
     .single();
   return data;
 }

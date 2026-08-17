@@ -6,12 +6,12 @@ import { createProject, enumUses } from '@/tools/ast-dataflow';
  * enum-uses query — Vitest suite
  *
  * Ground-truth fixture set under fixtures/13-enum-uses/.
- * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
+ * Tests verify real behaviour:
  *   - Assertions are on the result shape and counts (not call-chain internals).
  *   - toHaveLength pins exact counts; no toBeGreaterThanOrEqual(1) + find() antipattern.
  *   - Test titles read like product specs (what the user observes), not implementation.
  *
- * KH currently has no native TS `enum` declarations; smoke scoped to fixture-only.
+ * No native TS `enum` declarations exist outside these fixtures; smoke scoped to fixture-only.
  */
 
 const FIXTURE_DIR = resolve(__dirname, 'fixtures', '13-enum-uses');

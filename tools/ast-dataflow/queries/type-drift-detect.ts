@@ -1,14 +1,14 @@
 /**
- * type-drift-detect query (PRODUCT.md WP-D, R-WP17)
+ * type-drift-detect query
  *
- * Classifies every response-interface candidate in the KH codebase into one
+ * Classifies every response-interface candidate in the target codebase into one
  * of four buckets:
  *   enforced    — symmetric usage (fetcher generic + route return-type)
  *   fetcher-only — fetcher uses the type but no route annotates it
  *   route-only  — route annotates but no fetcher uses it
  *   unused      — declared but used in neither position
  *
- * Algorithm summary (from TECH.md §WP-D):
+ * Algorithm summary:
  *   1. Enumerate candidate interfaces from types/ *.ts, lib/query/fetchers.ts,
  *      and app/api/ route files.
  *   2. For each candidate, classify its references as fetcher uses or route uses.
@@ -39,7 +39,7 @@ const DEFAULT_LIMIT = 500;
 
 // ---------------------------------------------------------------------------
 // Candidate regex — matches interface/type-alias names that are response
-// types per the default heuristic (PRODUCT.md D-15).
+// types per the default heuristic.
 // ---------------------------------------------------------------------------
 const DEFAULT_CANDIDATE_REGEX = /(Response|Payload|Result|Body)$/;
 
@@ -56,16 +56,15 @@ interface AllowlistEntry {
 //
 // Primary location is the repo-root dotfile (same convention as
 // `.type-drift-baseline.json`). The legacy `docs/specs/…` path is kept as a
-// fallback — the spec tree moved to the private docs-site (ID-68), so the
-// legacy path no longer exists in this repo and previously made the allowlist
-// silently dead.
+// fallback — that spec tree no longer exists in this repo, and when it was
+// the only location it made the allowlist silently dead.
 // ---------------------------------------------------------------------------
 const ALLOWLIST_PATHS = [
   ['.type-drift-allowlist.json'],
   [
     'docs',
     'specs',
-    'id-16-ast-dataflow-tool',
+    'ast-dataflow-tool',
     'type-safety-pipeline',
     'allowlist.json',
   ],
@@ -748,7 +747,7 @@ export async function typeDriftDetect(
     });
   }
 
-  // Spatial truncation first (PRODUCT inv 14), then the classification-major
+  // Spatial truncation first, then the classification-major
   // sort re-applied AFTER truncation — the stable sort preserves the
   // (file, line, column) order within each class, keeping the Markdown
   // report sections intact.
@@ -764,7 +763,7 @@ export async function typeDriftDetect(
   };
   results.sort((a, b) => ORDER[a.classification] - ORDER[b.classification]);
 
-  // CI mode: diff against baseline (D-19)
+  // CI mode: diff against baseline
   let newSinceBaseline: string[] | undefined;
   if (args.ci) {
     const baseline = loadBaseline(repoRoot);
@@ -798,7 +797,7 @@ export async function typeDriftDetect(
           error: {
             kind: 'parse_error' as const,
             message: 'Allowlist JSON is malformed — allowlist ignored.',
-            hint: `Fix ${join(repoRoot, 'docs', 'specs', 'id-16-ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json')}`,
+            hint: `Fix ${join(repoRoot, 'docs', 'specs', 'ast-dataflow-tool', 'type-safety-pipeline', 'allowlist.json')}`,
           },
         }
       : {}),

@@ -3,7 +3,7 @@
 // Relation type argument's concrete Row shape across the function boundary.
 // Expected column-reads hits for table='survey_questions', column='project_id':
 //   Line 23 — .select('project_id, question_text')  method='select'  isTyped=true  confidence='exact'
-//   Line 28 — .eq('project_id', procurementId)      method='eq'      isTyped=true  confidence='exact'
+//   Line 28 — .eq('project_id', projectId)      method='eq'      isTyped=true  confidence='exact'
 import { type SupabaseClient } from './supabase-stub.js';
 
 type Database = {
@@ -18,7 +18,7 @@ type Database = {
 
 async function fetchViaTypedParam(
   client: SupabaseClient<Database>,
-  procurementId: string,
+  projectId: string,
 ) {
   const { data: bySelect } = await client
     .from('survey_questions')
@@ -28,7 +28,7 @@ async function fetchViaTypedParam(
   const { data: byEq } = await client
     .from('survey_questions')
     .select('question_text')
-    .eq('project_id', procurementId)
+    .eq('project_id', projectId)
     .single();
 
   return { bySelect, byEq };

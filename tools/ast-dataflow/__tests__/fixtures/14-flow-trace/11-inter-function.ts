@@ -11,7 +11,7 @@
  *   hop 3 — parameter (data) in saveToDb, kind: argument (callee's param)
  *   hop 4 — .insert(data) in saveToDb, kind: apiCall
  *
- * OQ-FT3 LOCK: enclosing on hop 3 and hop 4 is the callee's enclosing
+ * Locked contract: enclosing on hop 3 and hop 4 is the callee's enclosing
  * function (saveToDb), NOT the upstream caller (processData).
  */
 

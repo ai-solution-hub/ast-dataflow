@@ -1,7 +1,7 @@
 // Fixture: typed Supabase client — .upsert() with project_id property.
 // Expected column-writes hits for table='survey_questions', column='project_id':
-//   Line 22 — .upsert({ project_id: procurementId, ... })  method='upsert'  isTyped=true  confidence='exact'
-//   Line 30 — .upsert([{ project_id: procurementId, ... }])  method='upsert'  isTyped=true  confidence='exact'
+//   Line 22 — .upsert({ project_id: projectId, ... })  method='upsert'  isTyped=true  confidence='exact'
+//   Line 30 — .upsert([{ project_id: projectId, ... }])  method='upsert'  isTyped=true  confidence='exact'
 import { createClient } from './supabase-stub.js';
 
 type Database = {
@@ -21,11 +21,11 @@ type Database = {
 const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 
 // Single-row upsert — longhand property
-async function upsertQuestion(procurementId: string, text: string) {
+async function upsertQuestion(projectId: string, text: string) {
   const { data } = await sb
     .from('survey_questions')
     .upsert(
-      { project_id: procurementId, question_text: text },
+      { project_id: projectId, question_text: text },
       { onConflict: 'id' },
     )
     .select('id')
@@ -34,10 +34,10 @@ async function upsertQuestion(procurementId: string, text: string) {
 }
 
 // Array upsert — single row in array form
-async function upsertArrayQuestion(procurementId: string, text: string) {
+async function upsertArrayQuestion(projectId: string, text: string) {
   const { data } = await sb
     .from('survey_questions')
-    .upsert([{ project_id: procurementId, question_text: text }], {
+    .upsert([{ project_id: projectId, question_text: text }], {
       onConflict: 'id',
     })
     .select('id')

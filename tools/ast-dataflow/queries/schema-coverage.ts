@@ -1,11 +1,11 @@
 /**
- * schema-coverage query (id-375 {375.8}) — the "built-not-wired" audit.
+ * schema-coverage query — the "built-not-wired" audit.
  *
  * One corpus walk joins the generated Postgres schema
  * (Database['public']['Tables'] in supabase/types/database.types.ts) to every
  * `.from()` query chain, then issues a per-column wiring verdict. The design
- * exists to NOT reproduce the baseline audit's false negatives
- * (id-375 research/baseline.md):
+ * exists to NOT reproduce the false negatives a naive grep-based baseline
+ * audit produced:
  *
  *   - schema enumeration + existence validation kills the silent-0/0
  *     dropped-table/typo'd-column failure (unknown_table / unknown_column);

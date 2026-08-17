@@ -15,11 +15,11 @@
  * answers rather than one compromise:
  *
  *   - CLI  — no policy. The caller already has the shell's authority, and
- *            out-of-repo sidecars are a LIVE requirement: canonical's
- *            scripts/census/run_census.py:288 defaults its sidecar output to
- *            $TMPDIR/canonical-census/ and feeds those absolute paths to
- *            `schema-coverage --evidence`. Confining the CLI would break the
- *            census as shipped.
+ *            out-of-repo sidecars are a LIVE requirement: evidence producers
+ *            (the Python companion's schema-uses sweep among them) default
+ *            their sidecar output to a $TMPDIR directory and feed those
+ *            absolute paths to `schema-coverage --evidence`. Confining the
+ *            CLI would break that workflow as shipped.
  *   - MCP  — allowlist, defaulting to [repoRoot]. The caller is a model, not
  *            the operator, so reaching outside the repo is opt-in and is
  *            configured server-side at spawn, never per request.

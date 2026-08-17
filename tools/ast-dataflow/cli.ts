@@ -67,7 +67,7 @@ function collectRepeatable(argv: string[], flag: string): string[] {
 
 /**
  * Parse `--limit` into a positive integer, or exit 2 on a malformed value
- * (PRODUCT.md invariant 27: malformed arguments exit non-zero with the
+ * (malformed arguments exit non-zero with the
  * offending argument and its expected shape). Previously a non-numeric limit
  * parsed to NaN and either silently disabled the cap or — for queries using
  * `rows.length < limit` — silently returned zero rows.
@@ -91,7 +91,7 @@ function parseLimit(flag: string | boolean | undefined): number | undefined {
 }
 
 /**
- * Emit a query response to stdout (PRODUCT.md P-29).
+ * Emit a query response to stdout.
  *
  * Rules:
  * - Always exits 0 when `response.error` is present (structured error, not crash).
@@ -128,7 +128,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow callers --symbol lib/supabase/safe.ts:sb',
+              'bun run ast-dataflow callers --symbol lib/db.ts:getClient',
           },
           {
             name: 'callees',
@@ -139,13 +139,13 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow callees --symbol lib/procurement/procurement-queries.ts:getQuestions',
+              'bun run ast-dataflow callees --symbol lib/surveys/survey-queries.ts:getQuestions',
           },
           {
             name: 'importers',
             args: ['--module <module-path>', '--limit N', '--json', '--pretty'],
             example:
-              "bun run ast-dataflow importers --module '@/lib/ai/change-reports'",
+              "bun run ast-dataflow importers --module '@/lib/surveys/survey-queries'",
           },
           {
             name: 'references',
@@ -158,7 +158,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              "bun run ast-dataflow references --symbol 'types/bid.ts:ProcurementWorkflowState'",
+              "bun run ast-dataflow references --symbol 'types/survey.ts:SurveyWorkflowState'",
           },
           {
             name: 'column-reads',
@@ -170,7 +170,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow column-reads --table form_questions --column question_text',
+              'bun run ast-dataflow column-reads --table survey_questions --column question_text',
           },
           {
             name: 'column-writes',
@@ -182,7 +182,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow column-writes --table form_questions --column question_text',
+              'bun run ast-dataflow column-writes --table survey_questions --column question_text',
           },
           {
             name: 'type-evolution',
@@ -195,7 +195,7 @@ function printCatalogue(): void {
               '--pretty',
             ],
             example:
-              'bun run ast-dataflow type-evolution --type ProcurementQuestion --property project_id',
+              'bun run ast-dataflow type-evolution --type SurveyQuestion --property project_id',
           },
           {
             name: 'dead-exports',
@@ -238,7 +238,7 @@ function printCatalogue(): void {
             name: 'string-literal-uses',
             args: ['--value <literal>', '--limit N', '--pretty'],
             example:
-              "bun run ast-dataflow string-literal-uses --value '@/lib/supabase/safe'",
+              "bun run ast-dataflow string-literal-uses --value '@/lib/db'",
           },
           // --- fixture-uses ---
           {
@@ -294,11 +294,11 @@ function printCatalogue(): void {
               '[--json | --pretty]',
             ],
             example:
-              'bun run ast-dataflow flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
+              'bun run ast-dataflow flow-trace --origin-file lib/surveys/survey-queries.ts --origin-line 42 --origin-column 9 --inter-function --pretty',
           },
         ],
         notes:
-          'callers + callees + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + fixture-uses + flow-trace + type-drift-detect + schema-coverage queries are wired. Full surface spec: docs-site specs/id-50-ast-dataflow-tool/PRODUCT.md; agent guidance: .claude/skills/ast-dataflow/SKILL.md.',
+          'callers + callees + importers + references + column-reads + column-writes + type-evolution + dead-exports + reexport-chain + enum-uses + string-literal-uses + fixture-uses + flow-trace + type-drift-detect + schema-coverage queries are wired. Usage: README.md; caveats and known gaps: ROADMAP.md and docs/gap-register.md.',
       },
       null,
       2,
@@ -308,7 +308,7 @@ function printCatalogue(): void {
 
 /**
  * Render the type-drift-detect results as a human-readable Markdown report.
- * Follows PRODUCT.md D-12: summary table + four sections (fetcher-only first).
+ * Layout: summary table + four sections (fetcher-only first).
  */
 function renderMarkdownReport(results: TypeDriftResult[]): string {
   const counts: Record<string, number> = {
@@ -458,7 +458,7 @@ async function main(): Promise<void> {
       if (typeof symbol !== 'string') {
         console.error('callees requires --symbol <file:name>');
         console.error(
-          'Example: bun run ast-dataflow callees --symbol lib/procurement/procurement-queries.ts:getQuestions',
+          'Example: bun run ast-dataflow callees --symbol lib/surveys/survey-queries.ts:getQuestions',
         );
         process.exit(2);
       }
@@ -483,7 +483,7 @@ async function main(): Promise<void> {
       if (typeof modulePath !== 'string') {
         console.error('importers requires --module <module-path>');
         console.error(
-          "Example: bun run ast-dataflow importers --module '@/lib/ai/change-reports'",
+          "Example: bun run ast-dataflow importers --module '@/lib/surveys/survey-queries'",
         );
         process.exit(2);
       }
@@ -503,7 +503,7 @@ async function main(): Promise<void> {
       if (typeof symbol !== 'string') {
         console.error('references requires --symbol <file:name>');
         console.error(
-          "Example: bun run ast-dataflow references --symbol 'types/bid.ts:ProcurementWorkflowState'",
+          "Example: bun run ast-dataflow references --symbol 'types/survey.ts:SurveyWorkflowState'",
         );
         process.exit(2);
       }
@@ -546,14 +546,14 @@ async function main(): Promise<void> {
       if (typeof table !== 'string' || !table) {
         console.error('column-reads requires --table <table-name>');
         console.error(
-          'Example: bun run ast-dataflow column-reads --table form_questions --column question_text',
+          'Example: bun run ast-dataflow column-reads --table survey_questions --column question_text',
         );
         process.exit(2);
       }
       if (typeof column !== 'string' || !column) {
         console.error('column-reads requires --column <column-name>');
         console.error(
-          'Example: bun run ast-dataflow column-reads --table form_questions --column question_text',
+          'Example: bun run ast-dataflow column-reads --table survey_questions --column question_text',
         );
         process.exit(2);
       }
@@ -580,14 +580,14 @@ async function main(): Promise<void> {
       if (typeof table !== 'string' || !table) {
         console.error('column-writes requires --table <table-name>');
         console.error(
-          'Example: bun run ast-dataflow column-writes --table form_questions --column question_text',
+          'Example: bun run ast-dataflow column-writes --table survey_questions --column question_text',
         );
         process.exit(2);
       }
       if (typeof column !== 'string' || !column) {
         console.error('column-writes requires --column <column-name>');
         console.error(
-          'Example: bun run ast-dataflow column-writes --table form_questions --column question_text',
+          'Example: bun run ast-dataflow column-writes --table survey_questions --column question_text',
         );
         process.exit(2);
       }
@@ -614,14 +614,14 @@ async function main(): Promise<void> {
       if (typeof typeName !== 'string' || !typeName) {
         console.error('type-evolution requires --type <TypeName>');
         console.error(
-          'Example: bun run ast-dataflow type-evolution --type ProcurementQuestion --property project_id',
+          'Example: bun run ast-dataflow type-evolution --type SurveyQuestion --property project_id',
         );
         process.exit(2);
       }
       if (typeof property !== 'string' || !property) {
         console.error('type-evolution requires --property <propertyName>');
         console.error(
-          'Example: bun run ast-dataflow type-evolution --type ProcurementQuestion --property project_id',
+          'Example: bun run ast-dataflow type-evolution --type SurveyQuestion --property project_id',
         );
         process.exit(2);
       }
@@ -728,7 +728,7 @@ async function main(): Promise<void> {
       if (typeof valueArg !== 'string' || !valueArg) {
         console.error('string-literal-uses requires --value <literal>');
         console.error(
-          "Example: bun run ast-dataflow string-literal-uses --value '@/lib/supabase/safe'",
+          "Example: bun run ast-dataflow string-literal-uses --value '@/lib/db'",
         );
         process.exit(2);
       }
@@ -803,7 +803,7 @@ async function main(): Promise<void> {
           'flow-trace requires --origin-file <repo-root-relative-path>',
         );
         console.error(
-          'Example: bun run ast-dataflow flow-trace --origin-file lib/procurement/procurement-queries.ts --origin-line 42 --origin-column 9',
+          'Example: bun run ast-dataflow flow-trace --origin-file lib/surveys/survey-queries.ts --origin-line 42 --origin-column 9',
         );
         process.exit(2);
       }
@@ -845,7 +845,7 @@ async function main(): Promise<void> {
       const excludeTests = parsed.flags['exclude-tests'] === true;
       const pretty = parsed.flags.pretty === true;
 
-      // Validate for unknown flags (PRODUCT.md invariant 29).
+      // Validate for unknown flags.
       const knownFlags = new Set([
         'origin-file',
         'origin-line',
@@ -929,7 +929,7 @@ async function main(): Promise<void> {
           `type-drift-detect: ${typedResponse.newSinceBaseline.length} new fetcher-only interface(s) not in baseline: ${typedResponse.newSinceBaseline.join(', ')}`,
         );
         // Regenerate the report file even on the failing path — the report is
-        // most useful precisely when CI fails (ID-68 PC-19 slice 1).
+        // most useful precisely when CI fails.
         {
           const { writeFileSync } = await import('node:fs');
           const { join: pathJoin } = await import('node:path');
@@ -974,8 +974,8 @@ async function main(): Promise<void> {
       }
 
       // Also regenerate the repo-root .type-drift-report.md when --ci.
-      // Gitignored dotfile (ID-68 PC-19 slice 1, ratified S317) — generated
-      // artefacts are never canonical (PRODUCT Inv 15/21).
+      // Gitignored dotfile — generated artefacts are never committed as a
+      // source of truth.
       if (ci) {
         const { writeFileSync } = await import('node:fs');
         const { join: pathJoin } = await import('node:path');
@@ -1047,7 +1047,7 @@ async function main(): Promise<void> {
         return;
       }
 
-      // PRODUCT inv 30: the Markdown report is written ONLY when --report is
+      // The Markdown report is written ONLY when --report is
       // passed — no repo writes by default.
       if (reportArg !== undefined) {
         const { writeFileSync } = await import('node:fs');

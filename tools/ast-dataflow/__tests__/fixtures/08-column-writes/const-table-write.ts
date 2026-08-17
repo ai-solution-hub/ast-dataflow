@@ -25,26 +25,26 @@ const sb = createClient<Database>('https://example.supabase.co', 'anon-key');
 // `string` table argument at compile time.
 const sbUntyped = createClient('https://example.supabase.co', 'anon-key');
 
-async function updateViaLiteralConst(procurementId: string) {
+async function updateViaLiteralConst(projectId: string) {
   const { data } = await sb
     .from(SURVEY_QUESTIONS_TABLE)
-    .update({ project_id: procurementId })
+    .update({ project_id: projectId })
     .single();
   return data;
 }
 
-async function upsertViaTableMap(procurementId: string) {
+async function upsertViaTableMap(projectId: string) {
   const { data } = await sb
     .from(TABLES.survey_questions)
-    .upsert({ project_id: procurementId })
+    .upsert({ project_id: projectId })
     .single();
   return data;
 }
 
-async function insertViaStringParam(tableName: string, procurementId: string) {
+async function insertViaStringParam(tableName: string, projectId: string) {
   const { data } = await sbUntyped
     .from(tableName)
-    .insert({ project_id: procurementId })
+    .insert({ project_id: projectId })
     .single();
   return data;
 }

@@ -29,7 +29,7 @@ export class AstResolverError extends Error {
 }
 
 /**
- * Build a QueryResponse that carries a structured error (PRODUCT.md P-29).
+ * Build a QueryResponse that carries a structured error.
  *
  * The response shape is a valid QueryResponse: `results` is always empty,
  * `truncated` is false, and `durationMs` records how long was spent before
@@ -66,7 +66,7 @@ export interface ResolvedSymbol {
 
 /**
  * Resolve a symbol identifier of the shape "<relative-file-path>:<name>".
- * Example: "lib/supabase/safe.ts:sb".
+ * Example: "lib/db.ts:getClient".
  * Throws if file is not in the project or no exported declaration matches.
  */
 export function resolveSymbol(
@@ -77,7 +77,7 @@ export function resolveSymbol(
   const sep = symbol.lastIndexOf(':');
   if (sep === -1) {
     throw new AstResolverError(
-      `Symbol must be "<file>:<name>"; got "${symbol}". Example: "lib/supabase/safe.ts:sb".`,
+      `Symbol must be "<file>:<name>"; got "${symbol}". Example: "lib/db.ts:getClient".`,
       'parse_error',
       'Use the format <relative-file-path>:<exported-name>.',
     );
@@ -349,7 +349,7 @@ export interface BarrelWalkResult {
  * Canonical test-file path detector.
  *
  * Covers the two most common test directory conventions:
- *   - __tests__/      KH convention (tests at repo root)
+ *   - __tests__/      root-level convention (tests at repo root)
  *   - src/__tests__/  Vite / create-vite scaffold convention
  *
  * Also catches /test/ directory segments and the universal .test.ts /

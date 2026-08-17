@@ -10,7 +10,7 @@ import type { TypeDriftResult } from '@/tools/ast-dataflow';
  *
  * Ground-truth fixture set under fixtures/17-type-drift/.
  *
- * Tests verify real behaviour per docs/reference/testing/test-philosophy.md:
+ * Tests verify real behaviour:
  *   - Pin exact counts — no toBeGreaterThan(0).
  *   - expect.arrayContaining([expect.objectContaining({...})]) for set
  *     membership assertions.
@@ -106,7 +106,7 @@ describe('type-drift-detect — D-29: test-only references get testOnly flag', (
 });
 
 // ---------------------------------------------------------------------------
-// D-11: JSONL row shape (exact field names from PRODUCT.md D-11)
+// JSONL row shape (exact field names)
 // ---------------------------------------------------------------------------
 describe('type-drift-detect — D-11: JSONL row shape', () => {
   it('every result row has the required fields from the spec', async () => {
@@ -382,7 +382,7 @@ describe('type-drift-detect — D-17: allowlist support', () => {
         tmpDir,
         'docs',
         'specs',
-        'id-16-ast-dataflow-tool',
+        'ast-dataflow-tool',
         'type-safety-pipeline',
       ),
       { recursive: true },
@@ -392,7 +392,7 @@ describe('type-drift-detect — D-17: allowlist support', () => {
         tmpDir,
         'docs',
         'specs',
-        'id-16-ast-dataflow-tool',
+        'ast-dataflow-tool',
         'type-safety-pipeline',
         'allowlist.json',
       ),
@@ -614,7 +614,7 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
         tmpDir,
         'docs',
         'specs',
-        'id-16-ast-dataflow-tool',
+        'ast-dataflow-tool',
         'type-safety-pipeline',
       ),
       { recursive: true },
@@ -624,7 +624,7 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
         tmpDir,
         'docs',
         'specs',
-        'id-16-ast-dataflow-tool',
+        'ast-dataflow-tool',
         'type-safety-pipeline',
         'allowlist.json',
       ),
@@ -644,7 +644,7 @@ describe('type-drift-detect — D-30: structured failure on bad allowlist', () =
     // Should NOT throw — structured error response instead
     const response = await typeDriftDetect({}, project, repoRoot);
     // The key invariant: no exception thrown, AND the response carries a
-    // structured error indicating the allowlist was malformed (D-30).
+    // structured error indicating the allowlist was malformed.
     expect(response.error).toBeDefined();
     expect(response.error?.kind).toBe('parse_error');
   });

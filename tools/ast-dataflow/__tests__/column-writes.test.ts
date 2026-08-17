@@ -372,8 +372,8 @@ type Database = {
   public: { Tables: { survey_questions: { Row: { project_id: string } } } };
 };
 const sb = createClient<Database>('', '');
-export function writeProjectId(procurementId: string) {
-  return sb.from('survey_questions').insert({ project_id: procurementId });
+export function writeProjectId(projectId: string) {
+  return sb.from('survey_questions').insert({ project_id: projectId });
 }
 `,
       { overwrite: true },

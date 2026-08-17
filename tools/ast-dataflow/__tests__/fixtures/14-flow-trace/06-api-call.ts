@@ -1,7 +1,7 @@
 // Fixture: apiCall sink (Supabase chain terminal method)
 // origin: const payload (line 14)
 // hop 2: .insert(payload) — apiCall hop at terminal mutating call, NOT at .from()
-// OQ-FT2 LOCK: emit at terminal mutating method (.insert), not at chain root (.from)
+// Locked contract: emit at terminal mutating method (.insert), not at chain root (.from)
 
 interface SupabaseClient {
   from(table: string): {

@@ -1,7 +1,7 @@
 /**
  * Fixture route for /api/orders.
  * Imports OrderSummaryResponse but does NOT annotate the return type.
- * This is the fetcher-only pattern — the gap WP-D detects.
+ * This is the fetcher-only pattern — the gap type-drift-detect detects.
  */
 
 import type { OrderSummaryResponse } from '@/types/items';
@@ -18,7 +18,7 @@ class NextResponse<T = unknown> {
   }
 }
 
-/** GET handler — no return type annotation (gap WP-D detects). */
+/** GET handler — no return type annotation (the gap detected). */
 export async function GET(id: string) {
   const data: OrderSummaryResponse = { orderId: id, status: 'pending' };
   return NextResponse.json(data);
