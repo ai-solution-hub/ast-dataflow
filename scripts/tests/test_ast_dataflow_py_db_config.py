@@ -63,6 +63,7 @@ EMPTY_CAVEATS: dict[str, object] = {
     "outOfScopeSchemaObjects": {"objects": [], "references": 0},
     "partitionAttribution": {},
     "positionalInsert": 0,
+    "unboundTriggerFunctions": [],
 }
 CAVEAT_KEYS = frozenset(EMPTY_CAVEATS)
 
@@ -82,6 +83,9 @@ METHOD_CLASSES = frozenset(
         "index",
         "generated-column",
         "foreign-key",
+        "unique-constraint",
+        "primary-key",
+        "not-null",
         "partition",
     }
 )
@@ -140,7 +144,7 @@ A1_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -205,7 +209,7 @@ A5_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -221,7 +225,7 @@ A6_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text,
     owner text
 );
@@ -244,7 +248,7 @@ A7_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -260,7 +264,7 @@ A8_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -430,7 +434,7 @@ B5_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.ledger (
-    id uuid NOT NULL,
+    id uuid,
     amount numeric
 );
 
@@ -507,7 +511,7 @@ class TestBPlpgsqlBodies:
 
 C_DOCS_TABLE = """\
 CREATE TABLE public.docs (
-    id uuid NOT NULL,
+    id uuid,
     title text,
     state text,
     updated_at timestamp with time zone
@@ -652,7 +656,7 @@ C7_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.items (
-    id uuid NOT NULL,
+    id uuid,
     price numeric
 );
 
@@ -714,6 +718,23 @@ END;
 $$;
 
 CREATE TRIGGER docs_notify AFTER INSERT ON public.docs FOR EACH ROW EXECUTE FUNCTION public.notify_docs();
+"""
+)
+
+C11_DUMP = (
+    HEADER
+    + C_DOCS_TABLE
+    + """\
+CREATE FUNCTION public.orphan_touch() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  IF NEW.title IS NOT NULL THEN
+    RAISE NOTICE 'orphan';
+  END IF;
+  RETURN NEW;
+END;
+$$;
 """
 )
 
@@ -835,6 +856,15 @@ class TestCTriggers:
             ("docs", "*", "read", "wildcard", "function-body:public.notify_docs"),
         }
 
+    def test_C11_unbound_trigger_function_is_counted_never_silent(self, tmp_path):
+        # A trigger function with no CREATE TRIGGER anywhere in the dump has NEW./
+        # OLD. references that attribute to no table. Per design §6 that blindness
+        # can carry no row, so it must be counted — and it blocks narrowing rather
+        # than passing as a clean measurement.
+        out = sidecar_for(tmp_path, C11_DUMP)
+        assert rows(out) == set()
+        assert caveats(out)["unboundTriggerFunctions"] == ["public.orphan_touch"]
+
 
 # ── D. Views ────────────────────────────────────────────────────────────────
 
@@ -842,7 +872,7 @@ D1_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.users (
-    id uuid NOT NULL,
+    id uuid,
     name text
 );
 
@@ -874,7 +904,7 @@ D3_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.users (
-    id uuid NOT NULL,
+    id uuid,
     email text
 );
 
@@ -954,7 +984,7 @@ class TestDViews:
 
 E_DOCS_TABLE = """\
 CREATE TABLE public.docs (
-    id uuid NOT NULL,
+    id uuid,
     tenant_id uuid,
     owner_id uuid
 );
@@ -1079,7 +1109,7 @@ F4_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.users (
-    id uuid NOT NULL,
+    id uuid,
     email text
 );
 
@@ -1113,16 +1143,42 @@ F7_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.parent (
-    id uuid NOT NULL
+    id uuid
 );
 
 CREATE TABLE public.child (
-    id uuid NOT NULL,
+    id uuid,
     parent_id uuid
 );
 
 ALTER TABLE ONLY public.child
     ADD CONSTRAINT child_parent_id_fkey FOREIGN KEY (parent_id) REFERENCES public.parent(id);
+"""
+)
+
+F8_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.members (
+    id uuid,
+    email text
+);
+
+ALTER TABLE ONLY public.members
+    ADD CONSTRAINT members_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY public.members
+    ADD CONSTRAINT members_email_key UNIQUE (email);
+"""
+)
+
+F9_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.tickets (
+    ref text NOT NULL,
+    note text
+);
 """
 )
 
@@ -1180,6 +1236,40 @@ class TestFFurniture:
             ("parent", "id", "read", "indirect", "foreign-key:public.child"),
         }
 
+    def test_F8_constraint_backed_indexes_are_indirect_reads(self, tmp_path):
+        # A PRIMARY KEY and a UNIQUE constraint are indexes with a constraint's
+        # name: executed structure over their columns. Emitting nothing for them
+        # manufactures measured-looking false-dead verdicts, which design §4 names
+        # as v1's worst defect.
+        out = sidecar_for(tmp_path, F8_DUMP)
+        assert rows(out) == {
+            ("members", "id", "read", "indirect", "primary-key:public.members_pkey"),
+            (
+                "members",
+                "email",
+                "read",
+                "indirect",
+                "unique-constraint:public.members_email_key",
+            ),
+        }
+
+    def test_F9_not_null_without_a_default_is_an_indirect_read(self, tmp_path):
+        # Design §4 lists "its NOT NULL" as tier-2 furniture. A NOT NULL column with
+        # no default must be supplied by every insert — executed structure whose
+        # writer lives outside the dump — so the honest verdict is undecidable, not
+        # unwired. A NOT NULL column that HAS a default is already carried by its
+        # `column-default` row (corpus F1) and does not double-count here.
+        out = sidecar_for(tmp_path, F9_DUMP)
+        assert rows(out) == {
+            ("tickets", "ref", "read", "indirect", "not-null:public.tickets.ref"),
+        }
+
+    def test_F9_not_null_beside_a_default_does_not_double_count(self, tmp_path):
+        # F1's fixture is `id uuid DEFAULT gen_random_uuid() NOT NULL` and its row
+        # set is pinned to the default row alone.
+        out = sidecar_for(tmp_path, F1_DUMP)
+        assert not [r for r in out["rows"] if r["method"].startswith("not-null:")]
+
 
 # ── G. Schema scope and collisions ──────────────────────────────────────────
 
@@ -1187,12 +1277,12 @@ G1_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
 CREATE TABLE auth.users (
-    id uuid NOT NULL,
+    id uuid,
     email text
 );
 
@@ -1208,11 +1298,11 @@ G2_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL
+    id uuid
 );
 
 CREATE TABLE auth.users (
-    id uuid NOT NULL,
+    id uuid,
     email text
 );
 
@@ -1228,12 +1318,12 @@ G3_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.users (
-    id uuid NOT NULL,
+    id uuid,
     email text
 );
 
 CREATE TABLE auth.users (
-    id uuid NOT NULL,
+    id uuid,
     email text
 );
 
@@ -1284,9 +1374,9 @@ H1_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.orders (
-    id uuid NOT NULL,
+    id uuid,
     total numeric,
-    created_at date NOT NULL
+    created_at date
 )
 PARTITION BY RANGE (created_at);
 
@@ -1330,7 +1420,7 @@ I1_DUMP = (
     + r"""\restrict aBcDeFgHiJkLmNoP
 
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -1350,7 +1440,7 @@ I2_RAW_DUMP = (
     HEADER
     + r"""\restrict aBcDeFgHiJkLmNoP
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 CREATE FUNCTION public.set_done(p_id uuid) RETURNS void
@@ -1366,7 +1456,7 @@ I2_SUPABASE_DUMP = (
     HEADER
     + r"""-- \restrict aBcDeFgHiJkLmNoP
 CREATE TABLE IF NOT EXISTS "public"."jobs" (
-    "id" uuid NOT NULL,
+    "id" uuid,
     "status" text
 );
 CREATE OR REPLACE FUNCTION "public"."set_done"("p_id" uuid) RETURNS void
@@ -1390,7 +1480,7 @@ I5_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -1421,7 +1511,7 @@ I7_DUMP = (
     HEADER
     + """\
 CREATE TABLE public.jobs (
-    id uuid NOT NULL,
+    id uuid,
     status text
 );
 
@@ -1634,6 +1724,7 @@ CORPUS_DUMPS: dict[str, str] = {
     "C8": C8_DUMP,
     "C9": C9_DUMP,
     "C10": C10_DUMP,
+    "C11": C11_DUMP,
     "D1": D1_DUMP,
     "D2": D2_DUMP,
     "D3": D3_DUMP,
@@ -1649,6 +1740,8 @@ CORPUS_DUMPS: dict[str, str] = {
     "F5": F5_DUMP,
     "F6": F6_DUMP,
     "F7": F7_DUMP,
+    "F8": F8_DUMP,
+    "F9": F9_DUMP,
     "G1": G1_DUMP,
     "G2": G2_DUMP,
     "G3": G3_DUMP,

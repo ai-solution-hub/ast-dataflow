@@ -62,6 +62,7 @@ existing Python CLI, and its sidecar `source` value is **`ast-dataflow-dbconfig`
 | C8  | trigger from C1 plus `ALTER TABLE public.docs DISABLE TRIGGER trg`          | C1's rows capped at `indirect`; `disabledObjects` +1                                                |
 | C9  | DELETE trigger body reads `OLD.id`; separate INSERT trigger body reads `OLD.id` | DELETE: exact read. INSERT: no row (`OLD` is null in INSERT triggers)                           |
 | C10 | body: `PERFORM pg_notify('c', to_jsonb(NEW)::text)`                         | table-scoped `*` read on the bound table, never silence                                             |
+| C11 | a `RETURNS trigger` function with `NEW.x` references and NO `CREATE TRIGGER` binding anywhere in the dump | NO rows; `unboundTriggerFunctions` +1 — the references attribute to no table, so §6 forbids a row and requires a count that blocks narrowing |
 
 ## D. Views
 
@@ -92,6 +93,8 @@ existing Python CLI, and its sidecar `source` value is **`ast-dataflow-dbconfig`
 | F5  | partial index `WHERE status = 'active'`                                     | indirect reads on the indexed column AND `status`                                                   |
 | F6  | generated column `b AS (a * 2) STORED`                                      | indirect read `a`, indirect write `b` (§11.1 pinned at indirect for v1)                             |
 | F7  | FK `child.parent_id REFERENCES parent(id)`                                  | indirect read `child.parent_id` AND indirect read `parent.id` — the one furniture class whose rows land on a different table than the object (ratification note 5) |
+| F8  | `ADD CONSTRAINT … PRIMARY KEY (id)` and `ADD CONSTRAINT … UNIQUE (email)`   | indirect read on each constrained column, methods `primary-key:…` / `unique-constraint:…` — constraint-backed indexes are indexes, and silence here manufactures false-dead verdicts |
+| F9  | a column declared `NOT NULL` with no default                                | indirect read on that column, method `not-null:<table>.<column>` — §4 lists "its NOT NULL" as tier 2; every insert must supply it, so `undecidable` is the honest verdict. A `NOT NULL` column that HAS a default is carried by its `column-default` row (F1) and is not double-counted |
 
 ## G. Schema scope and collisions
 
@@ -129,3 +132,14 @@ existing Python CLI, and its sidecar `source` value is **`ast-dataflow-dbconfig`
 - The **migrations-SQL producer** (sibling, reads repo files) — its corpus comes with its
   slice.
 - Positional-INSERT column attribution via table-def join (A4 pins the conservative v1).
+
+## Extensions ratified during the implementation loop
+
+C11, F8 and F9 were added after the first red-test pass, when the implementation loop
+surfaced two omissions the original table set did not cover: constraint-backed indexes and
+bare `NOT NULL` (design §4 names "its NOT NULL" as tier-2 furniture explicitly, and the
+ratification's false-dead analysis leaned on exactly these objects), and trigger functions
+with no binding (silence there violates the §6 floor — blindness attributable to no table
+must block narrowing rather than merge clean). The caveat vocabulary is consequently closed
+at twelve keys, `unboundTriggerFunctions` being the twelfth. The global invariants are
+unchanged.
