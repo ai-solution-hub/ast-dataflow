@@ -62,6 +62,7 @@ existing Python CLI, and its sidecar `source` value is **`ast-dataflow-dbconfig`
 | C8  | trigger from C1 plus `ALTER TABLE public.docs DISABLE TRIGGER trg`                                | C1's rows capped at `indirect`; `disabledObjects` +1                                                                                                      |
 | C9  | DELETE trigger body reads `OLD.id`; separate INSERT trigger body reads `OLD.id`                   | DELETE: exact read. INSERT: no row (`OLD` is null in INSERT triggers)                                                                                     |
 | C10 | body: `PERFORM pg_notify('c', to_jsonb(NEW)::text)`                                               | table-scoped `*` read on the bound table, never silence                                                                                                   |
+| C11 | a `RETURNS trigger` function with `NEW.x` references and NO `CREATE TRIGGER` binding in the dump  | NO rows; `unboundTriggerFunctions` +1 — silence would violate the loudness floor (blindness attributable to no table blocks narrowing)                    |
 
 ## D. Views
 
@@ -83,15 +84,17 @@ existing Python CLI, and its sidecar `source` value is **`ast-dataflow-dbconfig`
 
 ## F. Furniture (tier 2 — `indirect`, never silence, never `exact`)
 
-| #   | fixture                                    | expect                                                                                                                                                             |
-| --- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| F1  | `col uuid DEFAULT gen_random_uuid()`       | indirect WRITE on the column, method `column-default`                                                                                                              |
-| F2  | single-column `CHECK (qty > 0)`            | indirect read `qty`, method `check-constraint`                                                                                                                     |
-| F3  | multi-column `CHECK (a > b)`               | indirect reads `a` AND `b`                                                                                                                                         |
-| F4  | plain index on `email`                     | indirect read `email`, method `index`                                                                                                                              |
-| F5  | partial index `WHERE status = 'active'`    | indirect reads on the indexed column AND `status`                                                                                                                  |
-| F6  | generated column `b AS (a * 2) STORED`     | indirect read `a`, indirect write `b` (§11.1 pinned at indirect for v1)                                                                                            |
-| F7  | FK `child.parent_id REFERENCES parent(id)` | indirect read `child.parent_id` AND indirect read `parent.id` — the one furniture class whose rows land on a different table than the object (ratification note 5) |
+| #   | fixture                                            | expect                                                                                                                                                             |
+| --- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F1  | `col uuid DEFAULT gen_random_uuid()`               | indirect WRITE on the column, method `column-default`                                                                                                              |
+| F2  | single-column `CHECK (qty > 0)`                    | indirect read `qty`, method `check-constraint`                                                                                                                     |
+| F3  | multi-column `CHECK (a > b)`                       | indirect reads `a` AND `b`                                                                                                                                         |
+| F4  | plain index on `email`                             | indirect read `email`, method `index`                                                                                                                              |
+| F5  | partial index `WHERE status = 'active'`            | indirect reads on the indexed column AND `status`                                                                                                                  |
+| F6  | generated column `b AS (a * 2) STORED`             | indirect read `a`, indirect write `b` (§11.1 pinned at indirect for v1)                                                                                            |
+| F7  | FK `child.parent_id REFERENCES parent(id)`         | indirect read `child.parent_id` AND indirect read `parent.id` — the one furniture class whose rows land on a different table than the object (ratification note 5) |
+| F8  | `ADD CONSTRAINT ... UNIQUE (email)`; a PRIMARY KEY | indirect READ on each constrained column, methods `unique-constraint:…` / `primary-key:…`                                                                          |
+| F9  | a column declared NOT NULL with no default         | indirect READ on the column, method `not-null:<table>.<column>` — §4 tier 2 names "its NOT NULL" explicitly; never silence                                         |
 
 ## G. Schema scope and collisions
 
