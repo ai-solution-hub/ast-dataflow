@@ -111,6 +111,30 @@ SUPPORTED_BODY_LANGUAGES = frozenset({"sql", "plpgsql"})
 
 TRIGGER_ROW_KEYWORDS = frozenset({"new", "old"})
 
+# `DISABLE TRIGGER ALL` / `USER` name no trigger — they disable the table's whole
+# set. Reading one as a trigger NAME silently ignores the disable.
+DISABLE_TRIGGER_KEYWORDS = frozenset({"all", "user"})
+
+# PL/pgSQL magic variables. They are bound names, not columns, so they must
+# never fabricate a row when they appear inside a single-table statement.
+PLPGSQL_BUILTIN_VARIABLES = frozenset(
+    {
+        "found",
+        "row_count",
+        "sqlerrm",
+        "sqlstate",
+        "tg_argv",
+        "tg_level",
+        "tg_name",
+        "tg_nargs",
+        "tg_op",
+        "tg_relid",
+        "tg_table_name",
+        "tg_table_schema",
+        "tg_when",
+    }
+)
+
 # Argument-list modes that precede a parameter name rather than being one.
 PARAMETER_MODES = frozenset({"IN", "OUT", "INOUT", "VARIADIC"})
 
@@ -138,6 +162,8 @@ TYPE_LEADING_KEYWORDS = frozenset(
         "macaddr",
         "money",
         "name",
+        "national",
+        "nchar",
         "numeric",
         "oid",
         "real",
@@ -160,6 +186,12 @@ TYPE_LEADING_KEYWORDS = frozenset(
 _DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 _IDENT_RE = r'(?:"[^"]*"|[A-Za-z_][A-Za-z0-9_$]*)'
 _BARE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# `NEW.col = expr` / `var = expr` at the very START of a statement. Anchored, so
+# a comparison inside a real SQL statement can never match.
+_ANCHORED_ASSIGNMENT_RE = re.compile(
+    r'^((?:new|old)\s*\.\s*"?[\w$]+"?|"?[A-Za-z_][\w$]*"?)\s*=(?!=)\s*(.*)$',
+    re.I | re.S,
+)
 
 
 class DumpFormatError(Exception):
@@ -189,6 +221,35 @@ class Statement:
     def line_at(self, offset: int) -> int:
         """Original dump line of a character offset inside this statement."""
         return self.start_line + self.text[:offset].count("\n")
+
+
+# Every CREATE TABLE spelling a dump can carry. A table the dump DEFINES but
+# this pattern misses is worse than unknown: its references become countable
+# blindness and its furniture rows vanish (corpus A10).
+_CREATE_TABLE_RE = (
+    r"^\s*create\s+(?:(?:global|local)\s+)?"
+    r"(?:temp\w*\s+|unlogged\s+|foreign\s+)?table\b"
+)
+
+_BEGIN_ATOMIC_RE = re.compile(r"\bBEGIN\s+ATOMIC\b", re.I)
+_END_KEYWORD_RE = re.compile(r"\bEND\b", re.I)
+
+
+def _inside_atomic_body(buffer: list[str]) -> bool:
+    """Is the buffer inside an unterminated PG14+ `BEGIN ATOMIC` body?
+
+    A SQL-standard function body is not dollar-quoted, so its statement
+    separators sit at depth 0 and would otherwise split the CREATE FUNCTION
+    into pieces. Only CREATE statements can open one, which keeps this off the
+    hot path for every other statement in the dump.
+    """
+    if not buffer or buffer[0] not in "Cc":
+        return False
+    text = "".join(buffer)
+    opens = len(_BEGIN_ATOMIC_RE.findall(text))
+    if not opens:
+        return False
+    return len(_END_KEYWORD_RE.findall(text)) < opens
 
 
 def split_statements(text: str) -> list[Statement]:
@@ -241,6 +302,7 @@ def split_statements(text: str) -> list[Statement]:
         if text.startswith("/*", index):
             nesting = 1
             index += 2
+            consumed_newlines = 0
             while index < length and nesting:
                 if text.startswith("/*", index):
                     nesting += 1
@@ -251,7 +313,13 @@ def split_statements(text: str) -> list[Statement]:
                 else:
                     if text[index] == "\n":
                         line += 1
+                        consumed_newlines += 1
                     index += 1
+            # The comment TEXT is dropped but its newlines are not: offsets
+            # inside a statement are what `Statement.line_at` counts, so a
+            # swallowed newline silently pulls every later ref upward.
+            if buffer and consumed_newlines:
+                buffer.append("\n" * consumed_newlines)
             continue
 
         if not buffer and char.isspace():
@@ -317,7 +385,7 @@ def split_statements(text: str) -> list[Statement]:
             depth += 1
         elif char == ")":
             depth = max(0, depth - 1)
-        elif char == ";" and depth == 0:
+        elif char == ";" and depth == 0 and not _inside_atomic_body(buffer):
             flush()
             index += 1
             continue
@@ -503,6 +571,8 @@ class Catalog:
     partitions: dict[str, str] = field(default_factory=dict)  # child -> parent
     rls_enabled: set[str] = field(default_factory=set)
     disabled_triggers: set[tuple[str, str]] = field(default_factory=set)
+    disabled_trigger_tables: set[str] = field(default_factory=set)
+    schemas_seen: set[str] = field(default_factory=set)
 
 
 # ── Caveats — exactly the corpus vocabulary, no more and no fewer ───────────
@@ -621,8 +691,25 @@ class DumpAnalyser:
         self._require_dump_shape(statements)
         for statement in statements:
             self._catalogue(statement)
+        self._require_target_schema_present()
         self._extract_evidence()
         return self._sidecar()
+
+    def _require_target_schema_present(self) -> None:
+        """A `--schema` that matches nothing the dump defines is a hard error.
+
+        The discriminator is "the dump HAS objects, just not in your schema" —
+        a dump with no objects at all stays corpus I4's honest empty sidecar.
+        A typo'd schema quietly producing a clean empty sidecar is exactly the
+        "could not look" / "measured" confusion the loudness floor forbids.
+        """
+        found = self.catalog.schemas_seen
+        if not found or self.target_schema in found:
+            return
+        raise DumpFormatError(
+            f"--schema {self.target_schema!r} matched no objects in {self.file}. "
+            f"The dump defines objects in: {', '.join(sorted(found))}."
+        )
 
     def _require_dump_shape(self, statements: list[Statement]) -> None:
         if DUMP_HEADER_MARKER in self.text:
@@ -651,7 +738,7 @@ class DumpAnalyser:
             self._catalogue_view(statement)
         elif re.match(r"^\s*create\s+(unique\s+)?index\b", head):
             self._catalogue_index(statement)
-        elif re.match(r"^\s*create\s+(temp\w*\s+)?table\b", head):
+        elif re.match(_CREATE_TABLE_RE, head):
             self._catalogue_table(statement)
         elif re.match(r"^\s*create\s+(constraint\s+)?trigger\b", head):
             self._catalogue_trigger(statement)
@@ -681,7 +768,14 @@ class DumpAnalyser:
     # -- tables
 
     def _catalogue_table(self, statement: Statement) -> None:
-        parsed = self._parse_one(statement.text)
+        # sqlglot degrades CREATE FOREIGN TABLE to an opaque Command, so the
+        # foreign spelling is normalised to the plain one: the column list is
+        # the part this producer needs, and the SERVER/OPTIONS tail is not.
+        text = statement.text
+        if re.match(r"^\s*create\s+foreign\s+table\b", text[:60], re.I):
+            text = re.sub(r"\bforeign\s+table\b", "TABLE", text, count=1, flags=re.I)
+            text = re.sub(r"\)\s*SERVER\b.*$", ")", text, flags=re.I | re.S)
+        parsed = self._parse_one(text)
         if parsed is None:
             return
         target = parsed.find(sqlglot_exp.Schema) or parsed.this
@@ -689,6 +783,7 @@ class DumpAnalyser:
         if not isinstance(table_node, sqlglot_exp.Table):
             return
         schema = _table_schema(table_node) or self.target_schema
+        self.catalog.schemas_seen.add(schema)
         name = _identifier_name(table_node)
 
         partition_of = parsed.find(sqlglot_exp.PartitionedOfProperty)
@@ -850,6 +945,7 @@ class DumpAnalyser:
         if not isinstance(table_node, sqlglot_exp.Table):
             return
         schema = _table_schema(table_node) or self.target_schema
+        self.catalog.schemas_seen.add(schema)
         name = _identifier_name(table_node)
         if not self._in_scope(schema):
             self._record_out_of_scope("view", f"{schema}.{name}")
@@ -874,6 +970,7 @@ class DumpAnalyser:
             return
         schema, name = _split_qualified(match.group(1))
         schema = schema or self.target_schema
+        self.catalog.schemas_seen.add(schema)
 
         # The Supabase variant quotes the language name: LANGUAGE "sql".
         language_match = re.search(
@@ -918,6 +1015,7 @@ class DumpAnalyser:
         if not isinstance(table_node, sqlglot_exp.Table):
             return
         schema = _table_schema(table_node) or self.target_schema
+        self.catalog.schemas_seen.add(schema)
         table = _identifier_name(table_node)
         name = _identifier_name(parsed.this)
 
@@ -971,6 +1069,7 @@ class DumpAnalyser:
         name = fold_identifier(match.group(1))
         schema, table = _split_qualified(match.group(2))
         schema = schema or self.target_schema
+        self.catalog.schemas_seen.add(schema)
         if not self._in_scope(schema):
             self._record_out_of_scope("policy", f"{schema}.{table}.{name}")
             return
@@ -998,6 +1097,7 @@ class DumpAnalyser:
         if not isinstance(table_node, sqlglot_exp.Table):
             return
         schema = _table_schema(table_node) or self.target_schema
+        self.catalog.schemas_seen.add(schema)
         if not self._in_scope(schema):
             return
         params = index.args.get("params")
@@ -1043,11 +1143,27 @@ class DumpAnalyser:
         if re.search(r"\benable\s+row\s+level\s+security\b", text, re.I):
             self.catalog.rls_enabled.add(identity)
             return
+        attach = re.search(
+            rf"\battach\s+partition\s+((?:{_IDENT_RE}\s*\.\s*)?{_IDENT_RE})", text, re.I
+        )
+        if attach is not None:
+            # The form pg_dump has emitted since PostgreSQL 12, and therefore
+            # the one real dumps contain (corpus H2).
+            child_schema, child = _split_qualified(attach.group(1))
+            self.catalog.partitions[f"{child_schema or self.target_schema}.{child}"] = (
+                identity
+            )
+            return
         disabled = re.search(rf"\bdisable\s+trigger\s+({_IDENT_RE})", text, re.I)
         if disabled is not None:
-            self.catalog.disabled_triggers.add(
-                (identity, fold_identifier(disabled.group(1)))
-            )
+            target_name = fold_identifier(disabled.group(1))
+            if target_name in DISABLE_TRIGGER_KEYWORDS:
+                # ALL and USER are KEYWORDS. Recording one as a trigger NAME
+                # leaves every real trigger enabled and exact, so the disable is
+                # silently ignored (corpus C13).
+                self.catalog.disabled_trigger_tables.add(identity)
+            else:
+                self.catalog.disabled_triggers.add((identity, target_name))
             return
         if not self._in_scope(schema):
             return
@@ -1225,12 +1341,31 @@ class DumpAnalyser:
                 targets = sorted({ref for refs in mapping.values() for ref in refs})
             else:
                 targets = mapping.get(column, [])
-            for source_schema, source_table, source_column in targets:
+            if targets:
+                for source_schema, source_table, source_column in targets:
+                    self.emit(
+                        self.resolve(
+                            source_schema, source_table, count_unresolved=False
+                        ),
+                        "*" if column == "*" else source_column,
+                        direction,
+                        confidence,
+                        method,
+                        line,
+                        source,
+                    )
+                return
+            # The view cannot map this output column to a source column — a
+            # retained star projection, or an expression. Degrade to a
+            # table-scoped row on each base table: silence would call those
+            # columns untouched (corpus D6).
+            degraded: Confidence = "wildcard" if direction == "read" else "indirect"
+            for base_schema, base_table in self._view_base_tables(view):
                 self.emit(
-                    self.resolve(source_schema, source_table, count_unresolved=False),
-                    "*" if column == "*" else source_column,
+                    self.resolve(base_schema, base_table, count_unresolved=False),
+                    "*",
                     direction,
-                    confidence,
+                    degraded,
                     method,
                     line,
                     source,
@@ -1238,34 +1373,57 @@ class DumpAnalyser:
         finally:
             self._view_chase.pop()
 
+    def _view_base_tables(self, view: ViewInfo) -> list[tuple[str, str]]:
+        """(schema, table) for the tables each output branch of a view reads."""
+        bases: list[tuple[str, str]] = []
+        for branch in _output_selects(view.select):
+            for _, schema, table in self._scope_for(branch):
+                if (schema, table) not in bases:
+                    bases.append((schema, table))
+        return bases
+
     def _view_column_sources(
         self, view: ViewInfo
     ) -> dict[str, list[tuple[str, str, str]]]:
-        """output column -> [(schema, table, source column)] for one view."""
+        """output column -> [(schema, table, source column)] for one view.
+
+        A set operation contributes EVERY branch's source for one output column,
+        which is what makes the D4 chase survive a UNION (corpus D5).
+        """
         mapping: dict[str, list[tuple[str, str, str]]] = {}
-        select = view.select
-        if not isinstance(select, sqlglot_exp.Select):
-            return mapping
-        scope = self._scope_for(select)
-        for projection in select.expressions:
-            alias = None
-            node = projection
-            if isinstance(projection, sqlglot_exp.Alias):
-                alias = _identifier_name(projection.args.get("alias"))
-                node = projection.this
-            for column_node in _columns_of(node):
-                name = _identifier_name(column_node)
-                schema, table = self._bind_column(column_node, scope)
-                if table:
-                    mapping.setdefault(alias or name, []).append((schema, table, name))
+        for branch in _output_selects(view.select):
+            scope = self._scope_for(branch)
+            for projection in branch.expressions:
+                alias = None
+                node = projection
+                if isinstance(projection, sqlglot_exp.Alias):
+                    alias = _identifier_name(projection.args.get("alias"))
+                    node = projection.this
+                for column_node in _columns_of(node):
+                    name = _identifier_name(column_node)
+                    schema, table = self._bind_column(column_node, scope)
+                    if not table:
+                        continue
+                    entry = (schema, table, name)
+                    bucket = mapping.setdefault(alias or name, [])
+                    if entry not in bucket:
+                        bucket.append(entry)
         return mapping
 
     # ── statement-level evidence ────────────────────────────────────────────
 
     def _scope_for(self, node) -> list[tuple[str, str, str]]:
-        """(alias, schema, table) for every table named in a statement."""
+        """(alias, schema, table) for the tables bound at THIS query level.
+
+        Scope is per-SELECT. A nested subquery binds its own tables, so folding
+        them into the outer scope binds an OUTER unqualified column to the
+        SUBQUERY's table — false-live evidence there and silence on the table
+        the column really belongs to (corpus E5).
+        """
         scope: list[tuple[str, str, str]] = []
-        for table_node in node.find_all(sqlglot_exp.Table):
+        for table_node in _walk_local(node, (sqlglot_exp.Select,)):
+            if not isinstance(table_node, sqlglot_exp.Table):
+                continue
             name = _identifier_name(table_node)
             if not name:
                 continue
@@ -1345,10 +1503,17 @@ class DumpAnalyser:
                 resolution, "*", "write", "indirect", ctx.method, ctx.line, ctx.source
             )
         source = parsed.expression
-        if isinstance(source, sqlglot_exp.Expression) and not isinstance(
-            source, sqlglot_exp.Values
-        ):
-            self._emit_reads(source, ctx)
+        if not isinstance(source, sqlglot_exp.Expression):
+            return
+        if isinstance(source, sqlglot_exp.Values):
+            # `INSERT … VALUES (NEW.id, NEW.total)` is the dominant audit-trigger
+            # idiom: the tuple carries the SOURCE table's reads, so skipping it
+            # keeps the writes and silently loses every read (corpus C12).
+            self._emit_column_reads(
+                _columns_of(source), self._scope_for(parsed), ctx
+            )
+            return
+        self._emit_reads(source, ctx)
 
     def _emit_update(self, parsed, ctx: "EvidenceContext") -> None:
         schema, table, _ = self._target_of(parsed)
@@ -1381,16 +1546,28 @@ class DumpAnalyser:
         )
 
     def _emit_reads(self, parsed, ctx: "EvidenceContext") -> None:
-        scope = self._scope_for(parsed)
-        self._emit_column_reads(_columns_of(parsed), scope, ctx)
-        # A star in PROJECTION position is a read of every column; `count(*)` is
-        # not (corpus A5 vs B2).
-        for select in _selects_of(parsed):
+        # Each SELECT level is processed with its OWN scope and its OWN columns,
+        # so a set operation's branches and a subquery's tables never bleed into
+        # one another (corpus D5, E5).
+        levels = _selects_of(parsed)
+        if not levels:
+            self._emit_column_reads(_columns_of(parsed), self._scope_for(parsed), ctx)
+            return
+        outer = self._scope_for(parsed)
+        for select in levels:
+            scope = self._scope_for(select) or outer
+            columns = [
+                node
+                for node in _walk_local(select, (sqlglot_exp.Select,))
+                if isinstance(node, sqlglot_exp.Column)
+            ]
+            self._emit_column_reads(columns, scope, ctx)
+            # A star in PROJECTION position is a read of every column;
+            # `count(*)` is not (corpus A5 vs B2).
             if not any(isinstance(x, sqlglot_exp.Star) for x in select.expressions):
                 continue
-            select_scope = self._scope_for(select) or scope
-            if len(select_scope) == 1:
-                _, schema, table = select_scope[0]
+            if len(scope) == 1:
+                _, schema, table = scope[0]
                 self.emit(
                     self.resolve(schema, table),
                     "*",
@@ -1419,21 +1596,31 @@ class DumpAnalyser:
                     continue
 
             schema, table = self._bind_column(column_node, scope)
-            if table:
-                resolution = self.resolve(schema, table)
-                # CATALOG-FIRST. An unqualified identifier that names a known
-                # column of the resolved table IS that column, even when a
-                # parameter shadows it — suppressing it would be evidence
-                # suppression, which fails in the false-dead direction. Only a
-                # non-column that names a bound parameter or DECLAREd variable
-                # is a variable, and a bound variable is not blindness, so it
-                # emits no row and no caveat (corpus B6-B8).
-                if (
-                    not qualifier
-                    and name.lower() in ctx.variables
-                    and not self._is_known_column(resolution, name)
+            # CATALOG-FIRST. An unqualified identifier that names a known column
+            # of a candidate table IS that column, even when a parameter shadows
+            # it — suppressing it would be evidence suppression, which fails in
+            # the false-dead direction. Only a non-column that names a bound
+            # parameter or DECLAREd variable is a variable, and a bound variable
+            # is not blindness, so it emits no row and no caveat (corpus B6-B8).
+            # The check spans EVERY candidate table, because the ambiguous path
+            # below emits one row per candidate and would otherwise fabricate on
+            # all of them at once (corpus B10).
+            if not qualifier and fold_identifier(name) in ctx.variables:
+                if table:
+                    candidates = [self.resolve(schema, table)]
+                else:
+                    candidates = [
+                        self.resolve(
+                            candidate_schema, candidate, count_unresolved=False
+                        )
+                        for _, candidate_schema, candidate in scope
+                    ]
+                if not any(
+                    self._is_known_column(candidate, name) for candidate in candidates
                 ):
                     continue
+            if table:
+                resolution = self.resolve(schema, table)
                 self.emit(
                     resolution,
                     name,
@@ -1497,10 +1684,13 @@ class DumpAnalyser:
     def _trigger_bindings(self) -> dict[str, list[TriggerInfo]]:
         bindings: dict[str, list[TriggerInfo]] = {}
         for trigger in self.catalog.triggers:
+            table_identity = f"{trigger.schema}.{trigger.table}"
             trigger.enabled = (
-                f"{trigger.schema}.{trigger.table}",
+                table_identity,
                 trigger.name,
-            ) not in self.catalog.disabled_triggers
+            ) not in self.catalog.disabled_triggers and (
+                table_identity not in self.catalog.disabled_trigger_tables
+            )
             bindings.setdefault(trigger.function, []).append(trigger)
         return bindings
 
@@ -1522,7 +1712,11 @@ class DumpAnalyser:
             line=function.body_line,
             confidence_cap=record.confidence_cap,
             record=record,
-            variables=function.parameters | _declared_variables(function.body),
+            variables=(
+                function.parameters
+                | _declared_variables(function.body)
+                | PLPGSQL_BUILTIN_VARIABLES
+            ),
         )
         if function.language == "sql":
             self._sql_body_evidence(function, ctx)
@@ -1728,7 +1922,13 @@ class DumpAnalyser:
     def _furniture_evidence(self) -> None:
         self._new_resolution_scope()
         for table in self.catalog.tables.values():
-            resolution = Resolution(table=table.name, identity=table.identity, ok=True)
+            # Routed through resolve() rather than constructed directly, so a
+            # partition CHILD's own furniture reaches the parent too. Under the
+            # ATTACH form the child carries a full column list, and a row naming
+            # it would die in `evidenceUnknownTables` (ratification note 3).
+            resolution = self.resolve(
+                table.schema, table.name, count_unresolved=False
+            )
             for column in table.columns:
                 self._column_furniture(resolution, table, column)
             for check in table.checks:
@@ -2093,12 +2293,22 @@ def isolate_plpgsql(body: str, body_line: int) -> list[PlpgsqlUnit]:
     return units
 
 
-def _decompose(text: str, line: int) -> Iterator[PlpgsqlUnit]:
-    """Strip leading control-flow prefixes, yielding the SQL units inside."""
-    remaining = text.strip()
+def _decompose(text: str, base_line: int) -> Iterator[PlpgsqlUnit]:
+    """Strip leading control-flow prefixes, yielding the SQL units inside.
+
+    Each unit carries the line where IT starts, not the line of the fragment
+    that contains it — `BEGIN` and the statement under it are usually on
+    different lines, and a ref that names the block opener instead of the
+    statement is a ref pointing at the wrong place.
+    """
+    original = text.strip()
+    remaining = original
     guard = 0
     while remaining and guard < 20:
         guard += 1
+        # `remaining` is always a suffix of `original`, so the consumed prefix
+        # is what separates the unit's line from the fragment's.
+        line = base_line + original[: len(original) - len(remaining)].count("\n")
         lowered = remaining.lower()
 
         if re.match(r"^begin\b", lowered):
@@ -2122,7 +2332,15 @@ def _decompose(text: str, line: int) -> Iterator[PlpgsqlUnit]:
                 yield PlpgsqlUnit("expression", condition, line)
             remaining = rest.strip()
             continue
-        if re.match(r"^(exception|case)\b", lowered):
+        if re.match(r"^exception\b", lowered):
+            # `EXCEPTION` opens the handler section; the arms that follow are
+            # `WHEN … THEN <statement>` and the statement is real executing SQL.
+            # Swallowing the whole fragment loses every write in the handler,
+            # and error-log tables are written from nowhere else (corpus B9).
+            yield PlpgsqlUnit("control-flow", "exception", line)
+            remaining = remaining[len("exception") :].strip()
+            continue
+        if re.match(r"^case\b", lowered):
             yield PlpgsqlUnit("control-flow", remaining, line)
             return
         if re.match(r"^execute\b", lowered):
@@ -2188,6 +2406,13 @@ def _split_assignment(text: str) -> tuple[str, str] | None:
         elif char == ":" and depth == 0 and text.startswith(":=", index):
             return text[:index].strip(), text[index + 2 :].strip()
         index += 1
+    # PL/pgSQL accepts `=` as an assignment operator too, and pg_dump preserves
+    # whichever the author wrote. Only the ANCHORED form counts — a statement
+    # cannot begin with a comparison — so `UPDATE t SET a = 1` is untouched
+    # while `NEW.updated_at = now()` is the write it really is (corpus C14).
+    anchored = _ANCHORED_ASSIGNMENT_RE.match(text)
+    if anchored is not None:
+        return anchored.group(1).strip(), anchored.group(2).strip()
     return None
 
 
@@ -2240,7 +2465,20 @@ def _is_word_char(char: str) -> bool:
 
 
 def _extract_body(text: str) -> tuple[str | None, int]:
-    """The dollar-quoted (or single-quoted) function body plus its offset."""
+    """The function body plus its offset within the statement.
+
+    Three spellings: dollar-quoted (the pg_dump default), the PG14+ SQL-standard
+    `BEGIN ATOMIC … END` form, and a single-quoted literal. The atomic form is
+    checked first because its body is plain SQL that may itself contain a
+    dollar-quoted literal.
+    """
+    atomic = _BEGIN_ATOMIC_RE.search(text)
+    if atomic is not None:
+        end = None
+        for candidate in _END_KEYWORD_RE.finditer(text, atomic.end()):
+            end = candidate
+        stop = end.start() if end is not None else len(text)
+        return text[atomic.end() : stop], atomic.end()
     for match in _DOLLAR_TAG_RE.finditer(text):
         tag = match.group(0)
         close = text.find(tag, match.end())
@@ -2378,6 +2616,54 @@ def _schema_identifiers(node) -> list[str]:
     return [_identifier_name(identifier) for identifier in node.expressions]
 
 
+def _set_operation_types() -> tuple[type, ...]:
+    """The set-operation node types this sqlglot build exposes."""
+    names = ("SetOperation", "Union", "Except", "Intersect")
+    found = tuple(
+        getattr(sqlglot_exp, name) for name in names if hasattr(sqlglot_exp, name)
+    )
+    return found or (sqlglot_exp.Union,)
+
+
+def _output_selects(node) -> list:
+    """The SELECTs whose projections form a query's OUTPUT columns.
+
+    A plain SELECT is its own output; a set operation's output is every branch;
+    a subquery wrapper delegates. Nested subqueries in a FROM are NOT output —
+    they belong to their own level.
+    """
+    if not isinstance(node, sqlglot_exp.Expression):
+        return []
+    if isinstance(node, sqlglot_exp.Select):
+        return [node]
+    if isinstance(node, sqlglot_exp.Subquery):
+        return _output_selects(node.this)
+    if isinstance(node, _set_operation_types()):
+        return _output_selects(node.this) + _output_selects(node.args.get("expression"))
+    return []
+
+
+def _walk_local(root, stop: tuple[type, ...]):
+    """Yield nodes under `root` without descending into `stop` node types.
+
+    This is what makes scope per-SELECT: a nested query's contents belong to
+    that query level, not to the one enclosing it.
+    """
+    if not isinstance(root, sqlglot_exp.Expression):
+        return
+    stack = [root]
+    while stack:
+        node = stack.pop()
+        yield node
+        for value in node.args.values():
+            items = value if isinstance(value, list) else [value]
+            for item in items:
+                if isinstance(item, sqlglot_exp.Expression) and not isinstance(
+                    item, stop
+                ):
+                    stack.append(item)
+
+
 def _columns_of(node) -> list:
     # sqlglot uses False (not None) as the default for absent optional args —
     # `TriggerProperties["when"]` on a trigger with no WHEN clause, for one.
@@ -2434,4 +2720,11 @@ def produce_sidecar(
     path = Path(dump_path)
     if not path.exists():
         raise DumpFormatError(f"dump file not found: {path}")
-    return DumpAnalyser(path, target_schema).run()
+    if not path.is_file():
+        raise DumpFormatError(f"--dump must name a file, not a directory: {path}")
+    try:
+        return DumpAnalyser(path, target_schema).run()
+    except OSError as error:
+        # Unreadable, mid-read failure, bad encoding — a caller gets a
+        # structured producer error, never a traceback.
+        raise DumpFormatError(f"could not read {path}: {error}") from error
