@@ -18,6 +18,18 @@ envelope — feed its output to the TS side via
 
     python3 tools/ast_dataflow_py/cli.py schema-uses \
         [--exclude-tests] [--pretty] > .schema-uses.json
+
+`db-config-uses` is the DB-config sweep (ADR 0003): it reads a schema-only
+Postgres dump — plain `pg_dump` or Supabase CLI `db dump` output — and emits
+the same sidecar envelope for the surfaces no source scanner can see (function
+bodies, views, triggers, RLS policies, and column furniture):
+
+    python3 tools/ast_dataflow_py/cli.py db-config-uses \
+        --dump db-config.sql [--schema public] [--out .db-config-uses.json]
+
+Unlike the source-corpus queries it REQUIRES sqlglot, and an input that is not
+a recognisable dump is a hard, loud failure that writes nothing — never an
+empty sidecar, which would convert "could not look" into "measured".
 """
 
 from __future__ import annotations
@@ -49,8 +61,8 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="ast-dataflow-py")
     parser.add_argument(
         "query",
-        choices=["column-reads", "column-writes", "schema-uses"],
-        help="Query to run over the Python corpus",
+        choices=["column-reads", "column-writes", "schema-uses", "db-config-uses"],
+        help="Query to run over the Python corpus (or, for db-config-uses, a dump)",
     )
     parser.add_argument("--table")
     parser.add_argument("--column")
@@ -68,6 +80,19 @@ def main(argv: list[str] | None = None) -> int:
         dest="scan_dirs",
         help="Directory (repo-relative) to scan; repeatable. Default: scripts",
     )
+    parser.add_argument(
+        "--dump",
+        help="Path to a schema-only Postgres dump (db-config-uses only)",
+    )
+    parser.add_argument(
+        "--schema",
+        default="public",
+        help="Target schema for db-config-uses (default: public)",
+    )
+    parser.add_argument(
+        "--out",
+        help="Write the sidecar here instead of stdout (db-config-uses only)",
+    )
     args = parser.parse_args(argv)
 
     if args.limit < 1:
@@ -80,6 +105,30 @@ def main(argv: list[str] | None = None) -> int:
     started = time.monotonic()
     root = Path(args.root).resolve()
     scan_dirs = args.scan_dirs or DEFAULT_SCAN_DIRS
+
+    if args.query == "db-config-uses":
+        if not args.dump or not args.dump.strip():
+            print("db-config-uses requires --dump <path>.", file=sys.stderr)
+            return 2
+        from tools.ast_dataflow_py.db_config_uses import (  # noqa: E402
+            DumpFormatError,
+            produce_sidecar,
+        )
+
+        try:
+            sidecar = produce_sidecar(Path(args.dump), target_schema=args.schema)
+        except DumpFormatError as error:
+            # A hard, loud failure that writes nothing: an unreadable or
+            # unrecognisable dump must never merge as a clean empty sidecar.
+            print(f"db-config-uses: {error}", file=sys.stderr)
+            return 1
+        sidecar["durationMs"] = int((time.monotonic() - started) * 1000)
+        payload = json.dumps(sidecar, indent=2 if args.pretty else None)
+        if args.out:
+            Path(args.out).write_text(payload + "\n", encoding="utf-8")
+        else:
+            print(payload)
+        return 0
 
     if args.query == "schema-uses":
         if args.table or args.column:
