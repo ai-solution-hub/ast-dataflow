@@ -111,6 +111,52 @@ SUPPORTED_BODY_LANGUAGES = frozenset({"sql", "plpgsql"})
 
 TRIGGER_ROW_KEYWORDS = frozenset({"new", "old"})
 
+# Argument-list modes that precede a parameter name rather than being one.
+PARAMETER_MODES = frozenset({"IN", "OUT", "INOUT", "VARIADIC"})
+
+# Words that open a TYPE in an argument list, so a parameter leading with one
+# is unnamed (`f(timestamp with time zone)`). Reading such a word as a name
+# would let it suppress a real column of the same name.
+TYPE_LEADING_KEYWORDS = frozenset(
+    {
+        "bigint",
+        "bit",
+        "boolean",
+        "bytea",
+        "char",
+        "character",
+        "cidr",
+        "date",
+        "decimal",
+        "double",
+        "inet",
+        "int",
+        "integer",
+        "interval",
+        "json",
+        "jsonb",
+        "macaddr",
+        "money",
+        "name",
+        "numeric",
+        "oid",
+        "real",
+        "record",
+        "setof",
+        "smallint",
+        "text",
+        "time",
+        "timestamp",
+        "trigger",
+        "tsquery",
+        "tsvector",
+        "uuid",
+        "varchar",
+        "void",
+        "xml",
+    }
+)
+
 _DOLLAR_TAG_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 _IDENT_RE = r'(?:"[^"]*"|[A-Za-z_][A-Za-z0-9_$]*)'
 _BARE_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
@@ -383,6 +429,7 @@ class FunctionInfo:
     body: str
     body_line: int
     returns_trigger: bool
+    parameters: frozenset[str] = frozenset()
 
     @property
     def identity(self) -> str:
@@ -854,6 +901,7 @@ class DumpAnalyser:
                 body=body,
                 body_line=statement.line_at(body_offset),
                 returns_trigger=returns_trigger,
+                parameters=_parameter_names(statement.text, match.end()),
             )
         )
 
@@ -1226,6 +1274,18 @@ class DumpAnalyser:
             scope.append((alias or name, _table_schema(table_node), name))
         return scope
 
+    def _is_known_column(self, resolution: Resolution, name: str) -> bool:
+        """Does the resolved table declare this column in the dump's catalog?"""
+        if not resolution.ok:
+            return False
+        table = self.catalog.tables.get(resolution.identity)
+        if table is not None:
+            return any(column.name == name for column in table.columns)
+        view = self.catalog.views.get(resolution.identity)
+        if view is not None:
+            return name in self._view_column_sources(view)
+        return False
+
     def _bind_column(self, column_node, scope) -> tuple[str, str]:
         """Bind a column to (schema, table) using its qualifier and the scope."""
         qualifier_node = column_node.args.get("table")
@@ -1360,8 +1420,22 @@ class DumpAnalyser:
 
             schema, table = self._bind_column(column_node, scope)
             if table:
+                resolution = self.resolve(schema, table)
+                # CATALOG-FIRST. An unqualified identifier that names a known
+                # column of the resolved table IS that column, even when a
+                # parameter shadows it — suppressing it would be evidence
+                # suppression, which fails in the false-dead direction. Only a
+                # non-column that names a bound parameter or DECLAREd variable
+                # is a variable, and a bound variable is not blindness, so it
+                # emits no row and no caveat (corpus B6-B8).
+                if (
+                    not qualifier
+                    and name.lower() in ctx.variables
+                    and not self._is_known_column(resolution, name)
+                ):
+                    continue
                 self.emit(
-                    self.resolve(schema, table),
+                    resolution,
                     name,
                     "read",
                     ctx.cap("exact"),
@@ -1448,6 +1522,7 @@ class DumpAnalyser:
             line=function.body_line,
             confidence_cap=record.confidence_cap,
             record=record,
+            variables=function.parameters | _declared_variables(function.body),
         )
         if function.language == "sql":
             self._sql_body_evidence(function, ctx)
@@ -1950,6 +2025,8 @@ class EvidenceContext:
     confidence_cap: Confidence = "exact"
     implicit_table: Resolution | None = None
     record: TriggerRecordBinding | None = None
+    # Parameter and DECLAREd variable names bound by the containing function.
+    variables: frozenset[str] = frozenset()
 
     def cap(self, confidence: Confidence) -> Confidence:
         if self.confidence_cap == "indirect" and confidence == "exact":
@@ -1964,6 +2041,7 @@ class EvidenceContext:
             confidence_cap=self.confidence_cap,
             implicit_table=self.implicit_table,
             record=self.record,
+            variables=self.variables,
         )
 
 
@@ -2176,6 +2254,98 @@ def _extract_body(text: str) -> tuple[str | None, int]:
         if end != -1:
             return text[start:end], start
     return None, 0
+
+
+def _parameter_names(text: str, start: int) -> frozenset[str]:
+    """Named parameters of a CREATE FUNCTION argument list.
+
+    A parameter is `[IN|OUT|INOUT|VARIADIC] name type [DEFAULT expr]`, but the
+    name is OPTIONAL — `f(uuid)` and `f(timestamp with time zone)` declare
+    types only. Reading the leading word of an unnamed parameter as a name
+    would let a type keyword suppress a real column, so a leading word that is
+    a type keyword is treated as the type it is.
+    """
+    open_paren = text.find("(", start)
+    if open_paren == -1:
+        return frozenset()
+    depth = 0
+    index = open_paren
+    while index < len(text):
+        char = text[index]
+        if char in "'\"":
+            index = _skip_quoted(text, index, char)
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        index += 1
+    else:
+        return frozenset()
+
+    names: set[str] = set()
+    for argument in _split_top_level(text[open_paren + 1 : index], ","):
+        words = argument.split()
+        if len(words) < 2:
+            continue  # a bare type, so this parameter has no name
+        if words[0].upper() in PARAMETER_MODES:
+            words = words[1:]
+            if len(words) < 2:
+                continue
+        candidate = words[0]
+        if candidate.lower() in TYPE_LEADING_KEYWORDS:
+            continue
+        if candidate.startswith('"') or _BARE_NAME_RE.match(candidate):
+            names.add(fold_identifier(candidate))
+    return frozenset(names)
+
+
+def _declared_variables(body: str) -> frozenset[str]:
+    """Variable names bound by a PL/pgSQL body's DECLARE sections."""
+    names: set[str] = set()
+    in_declarations = False
+    for fragment in split_statements(body):
+        text = fragment.text.strip()
+        lowered = text.lower()
+        if lowered.startswith("declare"):
+            in_declarations = True
+            text = text[len("declare") :].strip()
+            if not text:
+                continue
+        elif re.match(r"^begin\b", lowered):
+            in_declarations = False
+            continue
+        if not in_declarations:
+            continue
+        words = text.split()
+        if words and (words[0].startswith('"') or _BARE_NAME_RE.match(words[0])):
+            names.add(fold_identifier(words[0]))
+    return frozenset(names)
+
+
+def _split_top_level(text: str, separator: str) -> list[str]:
+    """Split on a separator that is not inside parens or quotes."""
+    parts: list[str] = []
+    depth = 0
+    current = 0
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char in "'\"":
+            index = _skip_quoted(text, index, char)
+            continue
+        if char == "(":
+            depth += 1
+        elif char == ")":
+            depth -= 1
+        elif char == separator and depth == 0:
+            parts.append(text[current:index].strip())
+            current = index + 1
+        index += 1
+    parts.append(text[current:].strip())
+    return [part for part in parts if part]
 
 
 def _balanced_after(text: str, keyword_pattern: str) -> str | None:
