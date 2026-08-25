@@ -451,6 +451,59 @@ $$;
 )
 
 
+B6_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.jobs (
+    id uuid,
+    status text
+);
+
+CREATE FUNCTION public.claim(p_id uuid) RETURNS void
+    LANGUAGE sql
+    AS $$
+UPDATE public.jobs SET status = 'x' WHERE id = p_id;
+$$;
+"""
+)
+
+B7_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.t (
+    id uuid,
+    status text
+);
+
+CREATE FUNCTION public.pick() RETURNS SETOF uuid
+    LANGUAGE plpgsql
+    AS $$
+DECLARE
+  v_status text;
+BEGIN
+  RETURN QUERY SELECT id FROM public.t WHERE status = v_status;
+END;
+$$;
+"""
+)
+
+B8_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.jobs (
+    note text,
+    status text
+);
+
+CREATE FUNCTION public.annotate(status text) RETURNS void
+    LANGUAGE sql
+    AS $$
+UPDATE public.jobs SET note = 'x' WHERE status = 'open';
+$$;
+"""
+)
+
+
 class TestBPlpgsqlBodies:
     def test_B1_embedded_statement_inside_control_flow_is_isolated(self, tmp_path):
         # PL/pgSQL is not a SQL dialect: the producer isolates embedded SQL from the
@@ -505,6 +558,47 @@ class TestBPlpgsqlBodies:
         assert len(unparsed) == 1
         assert unparsed[0]["object"] == "public.b5"
         assert_quiet_except(out, "unparsedStatements", "plpgsqlStatementAccounting")
+
+    def test_B6_named_parameter_is_not_a_column(self, tmp_path):
+        # An unqualified identifier in a single-table statement would otherwise
+        # bind to that table: `WHERE id = p_id` fabricated an exact read of a
+        # `p_id` column that does not exist. A bound variable is not blindness,
+        # so it emits no row AND no caveat.
+        out = sidecar_for(tmp_path, B6_DUMP)
+        assert rows(out) == {
+            ("jobs", "status", "write", "exact", "function-body:public.claim"),
+            ("jobs", "id", "read", "exact", "function-body:public.claim"),
+        }
+        assert not [r for r in out["rows"] if r["column"] == "p_id"]
+        assert_quiet_except(out)
+
+    def test_B7_declared_variable_is_not_a_column(self, tmp_path):
+        out = sidecar_for(tmp_path, B7_DUMP)
+        assert rows(out) == {
+            ("t", "id", "read", "exact", "function-body:public.pick"),
+            ("t", "status", "read", "exact", "function-body:public.pick"),
+        }
+        assert not [r for r in out["rows"] if r["column"] == "v_status"]
+        assert_quiet_except(out, "plpgsqlStatementAccounting")
+
+    def test_B8_shadowing_parameter_loses_to_the_real_column(self, tmp_path):
+        # CATALOG-FIRST: in a LANGUAGE sql body an unqualified name matching BOTH
+        # a column and a parameter resolves to the COLUMN. Suppressing it would
+        # be evidence suppression — the false-dead direction — so parameter
+        # suppression applies only to identifiers that are NOT known columns of
+        # the statement's resolved table.
+        out = sidecar_for(tmp_path, B8_DUMP)
+        assert (
+            "jobs",
+            "status",
+            "read",
+            "exact",
+            "function-body:public.annotate",
+        ) in rows(out)
+        assert rows(out) == {
+            ("jobs", "note", "write", "exact", "function-body:public.annotate"),
+            ("jobs", "status", "read", "exact", "function-body:public.annotate"),
+        }
 
 
 # ── C. Triggers ─────────────────────────────────────────────────────────────
@@ -1714,6 +1808,9 @@ CORPUS_DUMPS: dict[str, str] = {
     "B3": B3_DUMP,
     "B4": B4_DUMP,
     "B5": B5_DUMP,
+    "B6": B6_DUMP,
+    "B7": B7_DUMP,
+    "B8": B8_DUMP,
     "C1": C1_DUMP,
     "C2": C2_DUMP,
     "C3": C3_DUMP,
