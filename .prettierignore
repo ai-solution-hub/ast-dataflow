@@ -3,3 +3,9 @@
 # moves the answer it exists to pin. One fixture is also invalid JSON on
 # purpose, which the formatter cannot parse at all.
 tools/ast-dataflow/__tests__/fixtures/
+
+# Harness configuration and historical handoffs are not maintained source:
+# agent/skill instruction files are load-bearing prose whose reformatting can
+# change meaning-adjacent structure, and the handoff is a point-in-time record.
+.claude/
+HANDOFF-ultrareview.md
