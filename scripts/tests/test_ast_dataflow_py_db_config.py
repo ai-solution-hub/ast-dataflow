@@ -277,6 +277,44 @@ $$;
 )
 
 
+A9_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.orders (
+    id uuid,
+    total numeric
+);
+
+CREATE FUNCTION public.zero_orders() RETURNS void
+    LANGUAGE sql
+    BEGIN ATOMIC
+ UPDATE public.orders SET total = 0;
+END;
+"""
+)
+
+A10_DUMP = (
+    HEADER
+    + """\
+CREATE UNLOGGED TABLE public.job_queue (
+    id uuid,
+    state text NOT NULL
+);
+
+CREATE FOREIGN TABLE public.remote_items (
+    id uuid,
+    label text
+) SERVER remote_srv;
+
+CREATE FUNCTION public.drain() RETURNS void
+    LANGUAGE sql
+    AS $$
+UPDATE public.job_queue SET state = 'done' WHERE id = '0';
+$$;
+"""
+)
+
+
 class TestASqlLanguageFunctionBodies:
     def test_A1_sql_body_splits_set_targets_from_where_reads(self, tmp_path):
         # Design §4: a function body is tier-1 executing text, so it reaches exact.
@@ -353,6 +391,37 @@ class TestASqlLanguageFunctionBodies:
         assert rows(out) == set()
         assert caveats(out)["unresolvedTableNames"] == {"ledger": 1}
         assert_quiet_except(out, "unresolvedTableNames")
+
+    def test_A9_sql_standard_begin_atomic_body_is_fully_supported(self, tmp_path):
+        # pg_dump 14+ emits SQL-standard bodies with no dollar quoting at all.
+        # Silence here was a confirmed review finding: no inventory entry, no
+        # caveat, no rows — the exact shape of "could not look" masquerading as
+        # "measured". The body is plain SQL, so it gets full support.
+        out = sidecar_for(tmp_path, A9_DUMP)
+        assert inventory(out)["functions"] == 1
+        assert rows(out) == {
+            ("orders", "total", "write", "exact", "function-body:public.zero_orders"),
+        }
+        assert_quiet_except(out)
+
+    def test_A10_unlogged_and_foreign_tables_are_catalogued(self, tmp_path):
+        # A table the dump DEFINES must never surface as an unresolved name:
+        # that converts a real reference into countable blindness and loses the
+        # table's furniture at the same time.
+        out = sidecar_for(tmp_path, A10_DUMP)
+        assert inventory(out)["tables"] == 2
+        assert rows(out) == {
+            ("job_queue", "state", "write", "exact", "function-body:public.drain"),
+            ("job_queue", "id", "read", "exact", "function-body:public.drain"),
+            (
+                "job_queue",
+                "state",
+                "read",
+                "indirect",
+                "not-null:public.job_queue.state",
+            ),
+        }
+        assert caveats(out)["unresolvedTableNames"] == {}
 
 
 # ── B. PL/pgSQL bodies ──────────────────────────────────────────────────────
@@ -487,6 +556,50 @@ $$;
 """
 )
 
+B9_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.t (
+    a integer
+);
+
+CREATE TABLE public.error_log (
+    msg text
+);
+
+CREATE FUNCTION public.guarded() RETURNS void
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  UPDATE public.t SET a = 1;
+EXCEPTION WHEN OTHERS THEN
+  INSERT INTO public.error_log (msg) VALUES (SQLERRM);
+END;
+$$;
+"""
+)
+
+B10_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.orders (
+    id uuid,
+    org_id uuid,
+    user_id uuid
+);
+
+CREATE TABLE public.users (
+    id uuid
+);
+
+CREATE FUNCTION public.by_org(p_org uuid) RETURNS SETOF record
+    LANGUAGE sql
+    AS $$
+SELECT o.id FROM public.orders o JOIN public.users u ON u.id = o.user_id WHERE o.org_id = p_org;
+$$;
+"""
+)
+
 B8_DUMP = (
     HEADER
     + """\
@@ -599,6 +712,31 @@ class TestBPlpgsqlBodies:
             ("jobs", "note", "write", "exact", "function-body:public.annotate"),
             ("jobs", "status", "read", "exact", "function-body:public.annotate"),
         }
+
+    def test_B9_sql_after_then_in_an_exception_arm_is_a_statement(self, tmp_path):
+        # An EXCEPTION arm's handler is real executing SQL. Swallowing the whole
+        # fragment as one control-flow unit loses every write in the handler —
+        # and error_log tables are written from nowhere else.
+        out = sidecar_for(tmp_path, B9_DUMP)
+        assert rows(out) == {
+            ("t", "a", "write", "exact", "function-body:public.guarded"),
+            ("error_log", "msg", "write", "exact", "function-body:public.guarded"),
+        }
+        # SQLERRM is a PL/pgSQL magic variable, not a column of error_log.
+        assert not [r for r in out["rows"] if r["column"].lower() == "sqlerrm"]
+
+    def test_B10_variable_suppression_holds_in_multi_table_scope(self, tmp_path):
+        # In a join the ambiguous-binding path emits a row per candidate table,
+        # so an unsuppressed parameter fabricates on EVERY table at once.
+        out = sidecar_for(tmp_path, B10_DUMP)
+        assert not [r for r in out["rows"] if r["column"] == "p_org"]
+        assert rows(out) == {
+            ("orders", "id", "read", "exact", "function-body:public.by_org"),
+            ("orders", "user_id", "read", "exact", "function-body:public.by_org"),
+            ("orders", "org_id", "read", "exact", "function-body:public.by_org"),
+            ("users", "id", "read", "exact", "function-body:public.by_org"),
+        }
+        assert caveats(out)["ambiguousColumnBindings"] == []
 
 
 # ── C. Triggers ─────────────────────────────────────────────────────────────
@@ -815,6 +953,63 @@ CREATE TRIGGER docs_notify AFTER INSERT ON public.docs FOR EACH ROW EXECUTE FUNC
 """
 )
 
+C12_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.orders (
+    id uuid,
+    total numeric
+);
+
+CREATE TABLE public.audit (
+    order_id uuid,
+    amount numeric
+);
+
+CREATE FUNCTION public.audit_order() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  INSERT INTO public.audit (order_id, amount) VALUES (NEW.id, NEW.total);
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER orders_audit AFTER INSERT ON public.orders FOR EACH ROW EXECUTE FUNCTION public.audit_order();
+"""
+)
+
+C13_ALL_DUMP = (
+    C1_DUMP
+    + """
+ALTER TABLE public.docs DISABLE TRIGGER ALL;
+"""
+)
+
+C13_USER_DUMP = (
+    C1_DUMP
+    + """
+ALTER TABLE public.docs DISABLE TRIGGER USER;
+"""
+)
+
+C14_DUMP = (
+    HEADER
+    + C_DOCS_TABLE
+    + """\
+CREATE FUNCTION public.docs_stamp() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+  NEW.updated_at = now();
+  RETURN NEW;
+END;
+$$;
+
+CREATE TRIGGER docs_stamp_trg BEFORE UPDATE ON public.docs FOR EACH ROW EXECUTE FUNCTION public.docs_stamp();
+"""
+)
+
 C11_DUMP = (
     HEADER
     + C_DOCS_TABLE
@@ -959,6 +1154,51 @@ class TestCTriggers:
         assert rows(out) == set()
         assert caveats(out)["unboundTriggerFunctions"] == ["public.orphan_touch"]
 
+    def test_C12_column_reads_inside_values_tuples_survive(self, tmp_path):
+        # `INSERT … VALUES (NEW.id, NEW.total)` is the dominant audit-trigger
+        # idiom. Dropping the VALUES tuple keeps the audit writes but loses
+        # every source-table read, so the read side of the audited table
+        # silently disappears.
+        out = sidecar_for(tmp_path, C12_DUMP)
+        assert rows(out) == {
+            ("audit", "order_id", "write", "exact", "function-body:public.audit_order"),
+            ("audit", "amount", "write", "exact", "function-body:public.audit_order"),
+            ("orders", "id", "read", "exact", "function-body:public.audit_order"),
+            ("orders", "total", "read", "exact", "function-body:public.audit_order"),
+        }
+
+    def test_C13_disable_trigger_all_disables_every_trigger(self, tmp_path):
+        # ALL and USER are KEYWORDS, not trigger names. Reading them as a
+        # trigger literally called "all" leaves every real trigger enabled and
+        # exact — the disable is silently ignored.
+        for dump in (C13_ALL_DUMP, C13_USER_DUMP):
+            out = sidecar_for(tmp_path, dump)
+            assert rows(out) == {
+                (
+                    "docs",
+                    "title",
+                    "read",
+                    "indirect",
+                    "function-body:public.docs_touch",
+                ),
+            }
+            assert len(caveats(out)["disabledObjects"]) == 1
+
+    def test_C14_equals_assignment_spelling_is_still_a_write(self, tmp_path):
+        # PL/pgSQL accepts `=` as well as `:=` for assignment. Treating the `=`
+        # form as an expression inverts the DIRECTION on a very common idiom —
+        # the column reads as read-only when it is actually written.
+        out = sidecar_for(tmp_path, C14_DUMP)
+        assert rows(out) == {
+            (
+                "docs",
+                "updated_at",
+                "write",
+                "exact",
+                "function-body:public.docs_stamp",
+            ),
+        }
+
 
 # ── D. Views ────────────────────────────────────────────────────────────────
 
@@ -1030,6 +1270,53 @@ CREATE VIEW public.v2 AS
 )
 
 
+D5_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.cats (
+    name text
+);
+
+CREATE TABLE public.dogs (
+    name text
+);
+
+CREATE VIEW public.pets AS
+ SELECT cats.name
+   FROM public.cats
+UNION ALL
+ SELECT dogs.name
+   FROM public.dogs;
+
+CREATE FUNCTION public.pet_names() RETURNS SETOF text
+    LANGUAGE sql
+    AS $$
+SELECT name FROM public.pets;
+$$;
+"""
+)
+
+D6_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.base (
+    a text,
+    b text
+);
+
+CREATE VIEW public.v_star AS
+ SELECT *
+   FROM public.base;
+
+CREATE FUNCTION public.star_reader() RETURNS SETOF record
+    LANGUAGE sql
+    AS $$
+SELECT a FROM public.v_star;
+$$;
+"""
+)
+
+
 class TestDViews:
     def test_D1_view_definition_reads_are_exact_and_carry_the_view_identity(
         self, tmp_path
@@ -1072,6 +1359,31 @@ class TestDViews:
             ("base", "a", "read", "exact", "view-definition:public.v2"),
         }
         assert not [r for r in out["rows"] if r["table"] in {"v1", "v2"}]
+
+    def test_D5_view_chase_resolves_through_set_operations(self, tmp_path):
+        # A UNION view is not a Select node, so a chase that only understands
+        # Select returns nothing and every reference through the view vanishes
+        # silently — breaking D4's guarantee on the shape real dumps contain.
+        out = sidecar_for(tmp_path, D5_DUMP)
+        assert rows(out) == {
+            ("cats", "name", "read", "exact", "view-definition:public.pets"),
+            ("dogs", "name", "read", "exact", "view-definition:public.pets"),
+            ("cats", "name", "read", "exact", "function-body:public.pet_names"),
+            ("dogs", "name", "read", "exact", "function-body:public.pet_names"),
+        }
+        assert not [r for r in out["rows"] if r["table"] == "pets"]
+
+    def test_D6_star_projection_view_degrades_never_silences(self, tmp_path):
+        # A view whose stored definition kept its star cannot map an output
+        # column to a source column. Degrading to a table-scoped `*` keeps the
+        # base table's columns in `undecidable`; returning nothing would call
+        # them untouched.
+        out = sidecar_for(tmp_path, D6_DUMP)
+        assert rows(out) == {
+            ("base", "*", "read", "wildcard", "view-definition:public.v_star"),
+            ("base", "*", "read", "wildcard", "function-body:public.star_reader"),
+        }
+        assert not [r for r in out["rows"] if r["table"] == "v_star"]
 
 
 # ── E. RLS policies ─────────────────────────────────────────────────────────
@@ -1124,6 +1436,28 @@ CREATE POLICY docs_owner ON public.docs FOR INSERT WITH CHECK ((owner_id = auth.
 )
 
 
+E5_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.projects (
+    id uuid,
+    owner_id uuid
+);
+
+CREATE TABLE public.members (
+    project_id uuid,
+    user_id uuid
+);
+
+ALTER TABLE public.projects ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY projects_access ON public.projects USING (((owner_id = auth.uid()) OR (EXISTS ( SELECT 1
+   FROM public.members m
+  WHERE (m.user_id = auth.uid())))));
+"""
+)
+
+
 class TestERlsPolicies:
     def test_E1_enabled_policy_qual_is_an_exact_read(self, tmp_path):
         out = sidecar_for(tmp_path, E1_DUMP)
@@ -1164,6 +1498,35 @@ class TestERlsPolicies:
         assert rows(out) == {
             ("docs", "owner_id", "read", "exact", "rls-policy:public.docs.docs_owner"),
         }
+
+    def test_E5_outer_columns_bind_to_the_policy_table_not_the_subquery(
+        self, tmp_path
+    ):
+        # Scope is per-SELECT. Collecting a subquery's tables into the outer
+        # scope binds the OUTER unqualified column to the subquery's table —
+        # false-live evidence on `members` and total silence on the column the
+        # policy actually guards. The `EXISTS (SELECT … )` qual is the dominant
+        # RLS shape, so this fires across a whole real policy set.
+        out = sidecar_for(tmp_path, E5_DUMP)
+        assert rows(out) == {
+            (
+                "projects",
+                "owner_id",
+                "read",
+                "exact",
+                "rls-policy:public.projects.projects_access",
+            ),
+            (
+                "members",
+                "user_id",
+                "read",
+                "exact",
+                "rls-policy:public.projects.projects_access",
+            ),
+        }
+        assert not [
+            r for r in out["rows"] if r["table"] == "members" and r["column"] == "owner_id"
+        ]
 
 
 # ── F. Furniture (tier 2 — indirect, never silence, never exact) ────────────
@@ -1486,6 +1849,34 @@ $$;
 )
 
 
+H2_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.orders (
+    id uuid,
+    total numeric,
+    created_at date
+)
+PARTITION BY RANGE (created_at);
+
+CREATE TABLE public.orders_2024 (
+    id uuid,
+    total numeric,
+    created_at date
+);
+
+ALTER TABLE ONLY public.orders ATTACH PARTITION public.orders_2024
+FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
+
+CREATE FUNCTION public.record_order(p_total numeric) RETURNS void
+    LANGUAGE sql
+    AS $$
+INSERT INTO public.orders_2024 (total) VALUES ($1);
+$$;
+"""
+)
+
+
 class TestHPartitions:
     def test_H1_partition_child_evidence_reaches_the_parent(self, tmp_path):
         # Ratification note 3: a row naming the CHILD would be dropped into
@@ -1500,6 +1891,26 @@ class TestHPartitions:
             "exact",
         )
         # The method still carries the child identity, so the ref stays auditable.
+        assert "partition:public.orders_2024" in row["method"]
+        assert not [r for r in out["rows"] if r["table"] == "orders_2024"]
+        assert caveats(out)["partitionAttribution"] == {
+            "public.orders_2024": "public.orders"
+        }
+
+    def test_H2_attach_partition_form_behaves_identically(self, tmp_path):
+        # pg_dump has emitted the ATTACH form since PostgreSQL 12, so this — not
+        # the inline PARTITION OF spelling — is what real dumps contain.
+        # Learning only the inline form makes ratification note 3's false-dead
+        # reachable in every real dump.
+        out = sidecar_for(tmp_path, H2_DUMP)
+        assert len(out["rows"]) == 1
+        row = out["rows"][0]
+        assert (row["table"], row["column"], row["direction"], row["confidence"]) == (
+            "orders",
+            "total",
+            "write",
+            "exact",
+        )
         assert "partition:public.orders_2024" in row["method"]
         assert not [r for r in out["rows"] if r["table"] == "orders_2024"]
         assert caveats(out)["partitionAttribution"] == {
@@ -1621,6 +2032,26 @@ $$;
 )
 
 
+I9_DUMP = (
+    HEADER
+    + """\
+CREATE TABLE public.jobs (
+    id uuid,
+    status text
+);
+
+CREATE FUNCTION public.set_done(p_id uuid) RETURNS void
+    LANGUAGE sql
+    /* a block comment
+       spanning
+       several lines */
+    AS $$
+UPDATE public.jobs SET status = 'done' WHERE id = p_id;
+$$;
+"""
+)
+
+
 class TestIArtefactLevel:
     def test_I1_restrict_meta_command_lines_do_not_shift_refs(self, tmp_path):
         # Modern pg_dump emits non-SQL psql meta-commands that crash a naive
@@ -1732,6 +2163,58 @@ class TestIArtefactLevel:
         assert exit_code != 0
         assert not out_path.exists()
 
+    def test_I9_block_comment_newlines_do_not_shift_refs(self, tmp_path):
+        # The `--` branch re-appended its newline; the `/* */` branch dropped
+        # every newline it consumed, so each block comment silently pulled every
+        # later ref in the statement upward. A ref that points at the wrong line
+        # is worse than no ref: it is confidently wrong.
+        out = sidecar_for(tmp_path, I9_DUMP)
+        assert rows(out) == {
+            ("jobs", "status", "write", "exact", "function-body:public.set_done"),
+            ("jobs", "id", "read", "exact", "function-body:public.set_done"),
+        }
+        expected_line = line_of(I9_DUMP, "UPDATE public.jobs")
+        for row in out["rows"]:
+            assert row["line"] == expected_line, row
+
+    def test_I10_schema_with_no_objects_is_a_hard_error(self, tmp_path):
+        # A typo'd --schema must never yield a clean empty sidecar: that is the
+        # "could not look" / "measured" confusion the loudness floor exists to
+        # prevent, and the error has to name what the dump DOES contain so the
+        # typo is obvious.
+        path = write_dump(tmp_path, G1_DUMP)
+        with pytest.raises(DumpFormatError) as excinfo:
+            produce_sidecar(path, target_schema="warehouse")
+        message = str(excinfo.value)
+        assert "warehouse" in message
+        assert "public" in message and "auth" in message
+
+    def test_I10_empty_dump_is_still_not_an_error(self, tmp_path):
+        # The discriminator is "the dump has objects, just not in your schema",
+        # NOT "the dump has no objects" — corpus I4 stays an empty sidecar.
+        out = sidecar_for(tmp_path, I4_EMPTY_DUMP, schema="warehouse")
+        assert out["rows"] == []
+
+    def test_I11_directory_dump_path_is_a_clean_error(self, tmp_path):
+        directory = tmp_path / "not-a-file"
+        directory.mkdir()
+        with pytest.raises(DumpFormatError):
+            produce_sidecar(directory)
+
+    def test_I11_cli_reports_unreadable_dump_without_a_traceback(self, tmp_path):
+        directory = tmp_path / "also-not-a-file"
+        directory.mkdir()
+        out_path = tmp_path / "sidecar.json"
+        exit_code = cli_main(
+            ["db-config-uses", "--dump", str(directory), "--out", str(out_path)]
+        )
+        assert exit_code != 0
+        assert not out_path.exists()
+
+    def test_I11_missing_dump_path_is_a_clean_error(self, tmp_path):
+        with pytest.raises(DumpFormatError):
+            produce_sidecar(tmp_path / "nope.sql")
+
 
 # ── The sidecar envelope (SIDECAR.md v1 + the design's §6/§7 enrichment) ────
 
@@ -1803,6 +2286,8 @@ CORPUS_DUMPS: dict[str, str] = {
     "A6": A6_DUMP,
     "A7": A7_DUMP,
     "A8": A8_DUMP,
+    "A9": A9_DUMP,
+    "A10": A10_DUMP,
     "B1": B1_DUMP,
     "B2": B2_DUMP,
     "B3": B3_DUMP,
@@ -1811,6 +2296,8 @@ CORPUS_DUMPS: dict[str, str] = {
     "B6": B6_DUMP,
     "B7": B7_DUMP,
     "B8": B8_DUMP,
+    "B9": B9_DUMP,
+    "B10": B10_DUMP,
     "C1": C1_DUMP,
     "C2": C2_DUMP,
     "C3": C3_DUMP,
@@ -1822,14 +2309,21 @@ CORPUS_DUMPS: dict[str, str] = {
     "C9": C9_DUMP,
     "C10": C10_DUMP,
     "C11": C11_DUMP,
+    "C12": C12_DUMP,
+    "C13all": C13_ALL_DUMP,
+    "C13user": C13_USER_DUMP,
+    "C14": C14_DUMP,
     "D1": D1_DUMP,
     "D2": D2_DUMP,
     "D3": D3_DUMP,
     "D4": D4_DUMP,
+    "D5": D5_DUMP,
+    "D6": D6_DUMP,
     "E1": E1_DUMP,
     "E2": E2_DUMP,
     "E3": E3_DUMP,
     "E4": E4_DUMP,
+    "E5": E5_DUMP,
     "F1": F1_DUMP,
     "F2": F2_DUMP,
     "F3": F3_DUMP,
@@ -1843,6 +2337,7 @@ CORPUS_DUMPS: dict[str, str] = {
     "G2": G2_DUMP,
     "G3": G3_DUMP,
     "H1": H1_DUMP,
+    "H2": H2_DUMP,
     "I1": I1_DUMP,
     "I2raw": I2_RAW_DUMP,
     "I2supabase": I2_SUPABASE_DUMP,
@@ -1850,6 +2345,7 @@ CORPUS_DUMPS: dict[str, str] = {
     "I5": I5_DUMP,
     "I6": I6_DUMP,
     "I7": I7_DUMP,
+    "I9": I9_DUMP,
 }
 
 CASE_IDS = sorted(CORPUS_DUMPS)
